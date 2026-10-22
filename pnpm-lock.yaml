@@ -38,9 +38,9 @@ importers:
       '@neshan-maps-platform/maplibre-sdk':
         specifier: ^5.24.4
         version: 5.24.4
-      '@rive-app/react-canvas':
-        specifier: ^4.37.0
-        version: 4.37.0(react@19.3.0)
+      '@rive-app/canvas-advanced':
+        specifier: 2.45.0
+        version: 2.45.0
       '@workspace/db':
         specifier: workspace:*
         version: link:../../packages/db
@@ -1578,13 +1578,8 @@ packages:
     resolution: {integrity: sha512-oGB+UxlgWcgQkgwo8GcEGwemoTFt3FIO9ababBmaGwXIoBKZ+GTy0pP185beGg7Llih/NSHSV2XAs1lnznocSg==}
     engines: {node: '>= 8'}
 
-  '@rive-app/canvas@2.45.0':
-    resolution: {integrity: sha512-GnfJI75Z990maZC7NtXUzuZG2C66j/qIQvFmFAUDS+fPy8k4genTPTrCSgpVpGQDuedFhhmVcPtRZks5lAPf3w==}
-
-  '@rive-app/react-canvas@4.37.0':
-    resolution: {integrity: sha512-qgUn427tbtYv85SyDRVjv3bwD0fsTxM2lVgphRLTY3g3UBrsOpocMmleGhswjdKqQsYgVBxWnj91a2OVCE8FQg==}
-    peerDependencies:
-      react: ^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0
+  '@rive-app/canvas-advanced@2.45.0':
+    resolution: {integrity: sha512-5SxYoL1jJEIOUMnGNssiVRbcZOQw2BWJZ/3PJE3zCl3CN5Tr0AYmgjkTkDsFH7T2qQhccIMnQROCV9aHAto9tA==}
 
   '@sec-ant/readable-stream@0.4.1':
     resolution: {integrity: sha512-831qok9r2t8AlxLko40y2ebgSDhenenCatLVeW/uBtnHPyhHOvG0C7TvfgecV+wHzIm5KUICgzmVpWS+IMEAeg==}
@@ -4767,12 +4762,7 @@ snapshots:
       '@nodelib/fs.scandir': 2.1.5
       fastq: 1.20.1
 
-  '@rive-app/canvas@2.45.0': {}
-
-  '@rive-app/react-canvas@4.37.0(react@19.3.0)':
-    dependencies:
-      '@rive-app/canvas': 2.45.0
-      react: 19.3.0
+  '@rive-app/canvas-advanced@2.45.0': {}
 
   '@sec-ant/readable-stream@0.4.1': {}
 
