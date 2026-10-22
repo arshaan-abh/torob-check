@@ -5,8 +5,15 @@
   height: 100%;
 }
 
-@media (max-width: 767px) {
-  .torob-map .maplibregl-ctrl-bottom-left {
-    bottom: calc(37dvh + 4rem);
-  }
+.torob-map-attribution {
+  bottom: calc(7.5rem + env(safe-area-inset-bottom) + 0.5rem);
+  transition: bottom 450ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.torob-map-attribution[data-drawer-snap="default"] {
+  bottom: calc(66dvh + 0.5rem);
+}
+
+.torob-map-attribution[data-drawer-snap="full"] {
+  visibility: hidden;
 }
