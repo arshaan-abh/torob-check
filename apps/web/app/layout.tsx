@@ -1,16 +1,17 @@
-import { Geist, Geist_Mono, Inter } from "next/font/google"
+import { Vazirmatn, Inter } from "next/font/google"
 
 import "@workspace/ui/globals.css"
-import "@neshan-maps-platform/maplibre-sdk/style.css"
+import "maplibre-gl/dist/maplibre-gl.css"
+import "../components/map-experience.css"
 import { ThemeProvider } from "@/components/theme-provider"
 import { TorobCheckProvider } from "@/app/components/torob-check-provider"
 import { cn } from "@workspace/ui/lib/utils"
 
-const inter = Inter({ subsets: ["latin"], variable: "--font-sans" })
+const fontInter = Inter({ subsets: ["latin"], variable: "--font-inter" })
 
-const fontMono = Geist_Mono({
-  subsets: ["latin"],
-  variable: "--font-mono",
+const fontVazirmatn = Vazirmatn({
+  subsets: ["arabic"],
+  variable: "--font-vazirmatn",
 })
 
 export default function RootLayout({
@@ -25,9 +26,9 @@ export default function RootLayout({
       suppressHydrationWarning
       className={cn(
         "antialiased",
-        fontMono.variable,
+        fontVazirmatn.variable,
         "font-sans",
-        inter.variable
+        fontInter.variable
       )}
     >
       <body>

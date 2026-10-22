@@ -401,7 +401,7 @@ export function TorobCheckCharacter({
       </div>
       <figcaption className="text-[10px] leading-4 text-muted-foreground">
         <a
-          className="pointer-events-auto underline decoration-muted-foreground/50 underline-offset-2 hover:text-foreground"
+          className="pointer-events-auto invisible underline decoration-muted-foreground/50 underline-offset-2 hover:text-foreground"
           href="https://openrive.upstand.dev"
           target="_blank"
           rel="noreferrer"

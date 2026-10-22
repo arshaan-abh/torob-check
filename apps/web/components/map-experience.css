@@ -1,0 +1,12 @@
+.torob-map.maplibregl-map {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+@media (max-width: 767px) {
+  .torob-map .maplibregl-ctrl-bottom-left {
+    bottom: calc(37dvh + 4rem);
+  }
+}

@@ -17,7 +17,7 @@ pnpm db:import
 pnpm dev
 ```
 
-`db:import` loads the CSV files in `dataset/` into an empty local database. It is a one-time import; rerunning it will hit the existing primary keys. Add your Neshan browser key as `NESHAN_API_KEY` and AI provider values to `apps/web/.env.local` when you have them. The map reads its key at runtime from `/api/runtime-config`, so it does not need to be baked into the Docker image. The AI provider settings are OpenAI-compatible so a provider can be chosen later.
+`db:import` loads the CSV files in `dataset/` into an empty local database. It is a one-time import; rerunning it will hit the existing primary keys. The map uses OpenFreeMap with MapLibre and needs no API key. Add AI provider values to `apps/web/.env.local` when you have them. The AI provider settings are OpenAI-compatible so a provider can be chosen later.
 
 The project MCP configuration includes the official shadcn registry server and Next.js devtools server. Restart Codex after adding MCP servers to its user configuration.
 

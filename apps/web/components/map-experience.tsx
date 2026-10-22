@@ -20,8 +20,7 @@ import { Button } from "@workspace/ui/components/button"
 import { cn } from "@workspace/ui/lib/utils"
 import { TorobCheckCharacter } from "@/app/components/torob-check-character"
 
-const NESHAN_LIGHT_STYLE =
-  "https://static.neshan.org/sdk/maplibre/styles/light.json"
+const OPENFREEMAP_STYLE = "https://tiles.openfreemap.org/styles/fiord"
 const SHOP_SOURCE_ID = "torob-shops"
 const SHOP_POINT_LAYER_ID = "torob-shop-points"
 const LOCATION_SOURCE_ID = "user-location"
@@ -195,26 +194,23 @@ export default function MapExperience() {
 
     async function initializeMap() {
       try {
-        const [{ getNeshanApiKey }, sdkModule] = await Promise.all([
-          import("@/lib/neshan-config"),
-          import("@neshan-maps-platform/maplibre-sdk"),
-        ])
-        const apiKey = await getNeshanApiKey()
+        const maplibre = await import("@/lib/maplibre-client")
 
         if (disposed || !mapContainerRef.current) return
 
-        activeMap = new sdkModule.default.Map({
+        activeMap = new maplibre.Map({
           container: mapContainerRef.current,
-          style: NESHAN_LIGHT_STYLE,
+          style: OPENFREEMAP_STYLE,
           center: TEHRAN_CENTER,
           zoom: 12.2,
           minZoom: 4,
           maxZoom: 19,
-          apiKey,
+          attributionControl: false,
           dragRotate: false,
           pitchWithRotate: false,
-        }) as unknown as MapLibreMap
+        })
         mapRef.current = activeMap
+        activeMap.addControl(new maplibre.AttributionControl(), "bottom-left")
 
         let loaded = false
 
@@ -308,7 +304,7 @@ export default function MapExperience() {
               filter: ["has", "point_count"],
               layout: {
                 "text-field": ["get", "point_count_abbreviated"],
-                "text-font": ["Vazir FD Regular"],
+                "text-font": ["Noto Sans Regular"],
                 "text-size": 12,
                 "text-allow-overlap": true,
               },
@@ -550,7 +546,7 @@ export default function MapExperience() {
     <main className="relative h-dvh min-h-[540px] w-full overflow-hidden bg-background text-foreground">
       <div
         ref={mapContainerRef}
-        className="absolute inset-0"
+        className="torob-map absolute inset-0"
         aria-label="نقشه فروشگاه‌های تهران"
       />
 
@@ -689,8 +685,8 @@ export default function MapExperience() {
             </span>
             <h1 className="text-base font-bold">نقشه در دسترس نیست</h1>
             <p className="mt-2 text-sm leading-6 text-muted-foreground">
-              مقدار NESHAN_API_KEY را در محیط اجرا تنظیم کنید و دامنه برنامه را
-              در پنل نشان مجاز کنید.
+              بارگذاری نقشه انجام نشد. اتصال اینترنت یا دسترسی به سرویس نقشه را
+              بررسی کنید.
             </p>
           </div>
         </div>
