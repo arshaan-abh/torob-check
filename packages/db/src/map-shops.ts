@@ -11,8 +11,8 @@ import {
   or,
 } from "drizzle-orm"
 
-import { getDb } from "./client.js"
-import { offers, shops } from "./schema.js"
+import { getDb } from "./client"
+import { offers, shops } from "./schema"
 
 export type MapShopBounds = {
   west: number

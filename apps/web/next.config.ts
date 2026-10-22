@@ -9,6 +9,9 @@ const nextConfig: NextConfig = {
   output: "standalone",
   outputFileTracingRoot: monorepoRoot,
   transpilePackages: ["@workspace/db", "@workspace/ui"],
+  experimental: {
+    agentUpgrade: "security",
+  },
 }
 
 export default nextConfig
