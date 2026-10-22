@@ -3,6 +3,7 @@ import { Geist, Geist_Mono, Inter } from "next/font/google"
 import "@workspace/ui/globals.css"
 import "@neshan-maps-platform/maplibre-sdk/style.css"
 import { ThemeProvider } from "@/components/theme-provider"
+import { TorobCheckProvider } from "@/app/components/torob-check-provider"
 import { cn } from "@workspace/ui/lib/utils"
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-sans" })
@@ -30,7 +31,9 @@ export default function RootLayout({
       )}
     >
       <body>
-        <ThemeProvider>{children}</ThemeProvider>
+        <TorobCheckProvider>
+          <ThemeProvider>{children}</ThemeProvider>
+        </TorobCheckProvider>
       </body>
     </html>
   )

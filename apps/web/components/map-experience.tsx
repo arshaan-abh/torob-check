@@ -18,6 +18,7 @@ import { Field, FieldGroup, FieldLabel } from "@workspace/ui/components/field"
 import { Input } from "@workspace/ui/components/input"
 import { Button } from "@workspace/ui/components/button"
 import { cn } from "@workspace/ui/lib/utils"
+import { TorobCheckCharacter } from "@/app/components/torob-check-character"
 
 const NESHAN_LIGHT_STYLE =
   "https://static.neshan.org/sdk/maplibre/styles/light.json"
@@ -552,6 +553,8 @@ export default function MapExperience() {
         className="absolute inset-0"
         aria-label="نقشه فروشگاه‌های تهران"
       />
+
+      <TorobCheckCharacter className="absolute top-36 left-[18%] z-10 md:top-auto md:bottom-[14%] md:left-[25%]" />
 
       <header className="pointer-events-none absolute inset-x-0 top-0 z-20 flex flex-col items-center gap-3 p-3 md:p-4">
         <div className="pointer-events-auto flex w-full items-center justify-between gap-3">

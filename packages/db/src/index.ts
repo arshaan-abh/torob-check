@@ -1,3 +1,3 @@
-export { getDb, getPool } from "./client.js"
-export { getMapShops, type MapShopBounds } from "./map-shops.js"
-export * from "./schema.js"
+export { getDb, getPool } from "./client"
+export { getMapShops, type MapShopBounds } from "./map-shops"
+export * from "./schema"
