@@ -1,0 +1,13 @@
+.git
+.next
+.turbo
+node_modules
+**/node_modules
+**/.next
+**/.turbo
+dataset
+coverage
+dist
+.env*
+**/.env*
+pnpm-debug.log*

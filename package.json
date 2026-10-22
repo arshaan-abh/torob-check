@@ -7,7 +7,13 @@
     "dev": "turbo dev",
     "lint": "turbo lint",
     "format": "turbo format",
-    "typecheck": "turbo typecheck"
+    "typecheck": "turbo typecheck",
+    "db:up": "docker compose up -d postgres",
+    "db:down": "docker compose down",
+    "db:generate": "pnpm --filter @workspace/db db:generate",
+    "db:migrate": "pnpm --filter @workspace/db db:migrate",
+    "db:studio": "pnpm --filter @workspace/db db:studio",
+    "db:import": "pnpm --filter @workspace/db db:import"
   },
   "devDependencies": {
     "@workspace/eslint-config": "workspace:*",
