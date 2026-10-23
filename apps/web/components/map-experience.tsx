@@ -47,6 +47,10 @@ import { ScrollArea } from "@workspace/ui/components/scroll-area"
 import { Skeleton } from "@workspace/ui/components/skeleton"
 import { Separator } from "@workspace/ui/components/separator"
 import {
+  ToggleGroup,
+  ToggleGroupItem,
+} from "@workspace/ui/components/toggle-group"
+import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
@@ -97,6 +101,13 @@ type Shop = {
 }
 
 type ShopMapPosition = { x: number; y: number }
+type ShopListScope = "all" | "visible"
+type ShopBounds = {
+  west: number
+  south: number
+  east: number
+  north: number
+}
 
 type ShopResponse = {
   shops: Shop[]
@@ -142,9 +153,49 @@ function emptyFeatureCollection(): ShopFeatureCollection {
   return { type: "FeatureCollection", features: [] } as ShopFeatureCollection
 }
 
+function getShopBounds(map: MapLibreMap): ShopBounds {
+  const bounds = map.getBounds()
+
+  return {
+    west: bounds.getWest(),
+    south: bounds.getSouth(),
+    east: bounds.getEast(),
+    north: bounds.getNorth(),
+  }
+}
+
+function getShopBoundsKey(bounds: ShopBounds | null) {
+  if (!bounds) return "no-map-bounds"
+
+  return [bounds.west, bounds.south, bounds.east, bounds.north]
+    .map((value) => value.toFixed(5))
+    .join(",")
+}
+
+function getShopListPageKey(
+  requestKey: string,
+  scope: ShopListScope,
+  bounds: ShopBounds | null
+) {
+  return scope === "all"
+    ? `${requestKey}|all`
+    : `${requestKey}|visible|${getShopBoundsKey(bounds)}`
+}
+
+function isShopInBounds(shop: Shop, bounds: ShopBounds) {
+  return (
+    shop.lon >= bounds.west &&
+    shop.lon <= bounds.east &&
+    shop.lat >= bounds.south &&
+    shop.lat <= bounds.north
+  )
+}
+
 function formatShopCount(total: number, truncated: boolean) {
   const count = persianNumber.format(total)
-  return truncated ? `بیش از ${count} فروشگاه` : `${count} فروشگاه`
+  return truncated
+    ? `${count} فروشگاه · بخشی از فهرست بارگذاری شده`
+    : `${count} فروشگاه`
 }
 
 function ShopListSkeleton() {
@@ -319,12 +370,17 @@ export default function MapExperience() {
   const activeShopRequestKeyRef = useRef<string | null>(null)
   const lastSuccessfulShopRequestKeyRef = useRef<string | null>(null)
   const hasLoadedShopsRef = useRef(false)
+  const shopListScopeRef = useRef<ShopListScope>("visible")
   const shopsRef = useRef<Shop[]>([])
   const hasUserLocationRef = useRef(false)
   const locationPermissionDeniedRef = useRef(false)
 
   const [shops, setShops] = useState<Shop[]>([])
-  const [visibleShopCount, setVisibleShopCount] = useState(SHOP_LIST_PAGE_SIZE)
+  const [shopListPageCounts, setShopListPageCounts] = useState<
+    Record<string, number>
+  >({})
+  const [shopsRequestKey, setShopsRequestKey] = useState("")
+  const [shopListScope, setShopListScope] = useState<ShopListScope>("visible")
   const [isLoadingMoreShops, setIsLoadingMoreShops] = useState(false)
   const [, startTransition] = useTransition()
   const [totalShops, setTotalShops] = useState(0)
@@ -345,6 +401,7 @@ export default function MapExperience() {
   const [searchError, setSearchError] = useState<string | null>(null)
   const [locationError, setLocationError] = useState<string | null>(null)
   const [mapCenter, setMapCenter] = useState(TEHRAN_CENTER)
+  const [mapBounds, setMapBounds] = useState<ShopBounds | null>(null)
   const [drawerSnapPoint, setDrawerSnapPoint] = useState<
     number | string | null
   >(DEFAULT_DRAWER_SNAP_POINT)
@@ -360,10 +417,17 @@ export default function MapExperience() {
 
   const selectedShop = shops.find((shop) => shop.shopId === selectedShopId)
   shopsRef.current = shops
-  const nearestShops = useMemo(() => {
+  const listShops = useMemo(() => {
+    if (shopListScope === "all" || !mapBounds) return shops
+
+    return shops.filter((shop) => isShopInBounds(shop, mapBounds))
+  }, [mapBounds, shopListScope, shops])
+  const displayedShops = useMemo(() => {
+    if (shopListScope === "all") return listShops
+
     const longitudeScale = Math.cos((mapCenter[1] * Math.PI) / 180)
 
-    return [...shops].sort((first, second) => {
+    return [...listShops].sort((first, second) => {
       const firstLongitude = (first.lon - mapCenter[0]) * longitudeScale
       const firstLatitude = first.lat - mapCenter[1]
       const secondLongitude = (second.lon - mapCenter[0]) * longitudeScale
@@ -375,25 +439,35 @@ export default function MapExperience() {
         (secondLongitude ** 2 + secondLatitude ** 2)
       )
     })
-  }, [mapCenter, shops])
+  }, [listShops, mapCenter, shopListScope])
+  const shopListPageKey = getShopListPageKey(
+    shopsRequestKey,
+    shopListScope,
+    shopListScope === "visible" ? mapBounds : null
+  )
+  const visibleShopCount =
+    shopListPageCounts[shopListPageKey] ?? SHOP_LIST_PAGE_SIZE
 
   const loadShops = useCallback(
     async (
       map: MapLibreMap,
       searchTerm = "",
       withinMap = false,
-      preserveListState = true
+      preserveListState = true,
+      resetPagination = true
     ) => {
       const searchParams = new URLSearchParams()
+      const viewportBounds = getShopBounds(map)
 
       if (searchTerm) searchParams.set("q", searchTerm)
 
-      if (!searchTerm || withinMap) {
-        const bounds = map.getBounds()
-        searchParams.set("west", String(bounds.getWest()))
-        searchParams.set("south", String(bounds.getSouth()))
-        searchParams.set("east", String(bounds.getEast()))
-        searchParams.set("north", String(bounds.getNorth()))
+      if (!searchTerm && shopListScopeRef.current === "all") {
+        searchParams.set("all", "1")
+      } else if (!searchTerm || withinMap) {
+        searchParams.set("west", String(viewportBounds.west))
+        searchParams.set("south", String(viewportBounds.south))
+        searchParams.set("east", String(viewportBounds.east))
+        searchParams.set("north", String(viewportBounds.north))
       }
 
       const requestKey = searchParams.toString()
@@ -419,7 +493,21 @@ export default function MapExperience() {
         setShopsStatus("ready")
       } else {
         setShopsStatus("loading")
-        setVisibleShopCount(SHOP_LIST_PAGE_SIZE)
+        setShopListPageCounts((currentCounts) => {
+          const nextCounts = { ...currentCounts }
+          const pageKeys = [
+            getShopListPageKey(requestKey, "all", null),
+            getShopListPageKey(requestKey, "visible", viewportBounds),
+          ]
+
+          for (const pageKey of pageKeys) {
+            if (resetPagination || nextCounts[pageKey] === undefined) {
+              nextCounts[pageKey] = SHOP_LIST_PAGE_SIZE
+            }
+          }
+
+          return nextCounts
+        })
         setIsLoadingMoreShops(false)
       }
 
@@ -439,6 +527,7 @@ export default function MapExperience() {
         if (controller.signal.aborted) return null
 
         lastSuccessfulShopRequestKeyRef.current = requestKey
+        setShopsRequestKey(requestKey)
         if (requestRef.current === controller) {
           requestRef.current = null
           activeShopRequestKeyRef.current = null
@@ -489,21 +578,26 @@ export default function MapExperience() {
   )
 
   const loadMoreShops = useCallback(() => {
-    if (isLoadingMoreShops || visibleShopCount >= nearestShops.length) return
+    if (isLoadingMoreShops || visibleShopCount >= displayedShops.length) return
 
     const nextShopCount = Math.min(
       visibleShopCount + SHOP_LIST_PAGE_SIZE,
-      nearestShops.length
+      displayedShops.length
     )
 
     setIsLoadingMoreShops(true)
     startTransition(() => {
-      setVisibleShopCount(nextShopCount)
+      setShopListPageCounts((currentCounts) => ({
+        ...currentCounts,
+        [shopListPageKey]: nextShopCount,
+      }))
       setIsLoadingMoreShops(false)
     })
   }, [
     isLoadingMoreShops,
-    nearestShops.length,
+    displayedShops.length,
+    shopListPageKey,
+    setShopListPageCounts,
     startTransition,
     visibleShopCount,
   ])
@@ -732,13 +826,14 @@ export default function MapExperience() {
           })
 
           activeMap.on("moveend", () => {
-            if (Date.now() < suppressShopSelectionMoveEndsUntilRef.current)
-              return
-
             if (activeMap) {
               const center = activeMap.getCenter()
               setMapCenter([center.lng, center.lat])
+              setMapBounds(getShopBounds(activeMap))
             }
+
+            if (Date.now() < suppressShopSelectionMoveEndsUntilRef.current)
+              return
 
             if (activeSearchWithinMapRef.current && activeSearchRef.current) {
               void loadShops(
@@ -747,12 +842,16 @@ export default function MapExperience() {
                 activeSearchWithinMapRef.current,
                 true
               )
-            } else if (!activeSearchRef.current) {
+            } else if (
+              !activeSearchRef.current &&
+              shopListScopeRef.current === "visible"
+            ) {
               void loadShops(activeMap!, "", false, true)
             }
           })
 
           setMapStatus("ready")
+          setMapBounds(getShopBounds(activeMap))
           void loadShops(activeMap)
         })
       } catch {
@@ -836,7 +935,11 @@ export default function MapExperience() {
     selectedShopIdRef.current = selectedShopId
   }, [selectedShopId, shops])
 
-  const searchShops = async (searchTerm: string, withinMap: boolean) => {
+  const searchShops = async (
+    searchTerm: string,
+    withinMap: boolean,
+    resetPagination = true
+  ) => {
     const map = mapRef.current
 
     if (!map) return
@@ -848,7 +951,13 @@ export default function MapExperience() {
     setIsSearching(true)
     setDrawerSnapPoint(DEFAULT_DRAWER_SNAP_POINT)
 
-    const result = await loadShops(map, searchTerm, withinMap, false)
+    const result = await loadShops(
+      map,
+      searchTerm,
+      withinMap,
+      false,
+      resetPagination
+    )
     setIsSearching(false)
 
     if (!result || !searchTerm || withinMap || result.shops.length === 0) return
@@ -913,8 +1022,23 @@ export default function MapExperience() {
     const activeSearch = activeSearchRef.current
 
     if (activeSearch && activeSearch === query.trim()) {
-      void searchShops(activeSearch, nextSearchWithinMap)
+      void searchShops(activeSearch, nextSearchWithinMap, false)
     }
+  }
+
+  const handleShopListScopeChange = (values: string[]) => {
+    const nextScope = values[0]
+
+    if (nextScope !== "all" && nextScope !== "visible") return
+    if (nextScope === shopListScopeRef.current) return
+
+    shopListScopeRef.current = nextScope
+    setShopListScope(nextScope)
+
+    if (activeSearchRef.current) return
+
+    const map = mapRef.current
+    if (map) void loadShops(map, "", false, false, false)
   }
 
   const clearSearch = () => {
@@ -988,10 +1112,10 @@ export default function MapExperience() {
     )
   }
 
-  const shopCountLabel = useMemo(
-    () => formatShopCount(totalShops, shopsTruncated),
-    [shopsTruncated, totalShops]
-  )
+  const shopCountLabel =
+    shopListScope === "all"
+      ? formatShopCount(totalShops, shopsTruncated)
+      : `${persianNumber.format(displayedShops.length)}${shopsTruncated ? "+" : ""} ${activeSearchRef.current ? "نتیجه" : "فروشگاه"} در نمای نقشه`
 
   const isCompactDrawer = drawerSnapPoint === COMPACT_DRAWER_SNAP_POINT
   const drawerExpandLabel = isCompactDrawer
@@ -1024,7 +1148,7 @@ export default function MapExperience() {
         aria-label="منابع نقشه"
         dir="ltr"
         data-drawer-snap={isCompactDrawer ? "peek" : "default"}
-        className="torob-map-attribution invisible absolute left-3 z-10 flex items-center gap-1.5 rounded-2xl border border-border/70 bg-card/95 px-3 py-2 text-xs leading-4 text-muted-foreground shadow-lg shadow-black/10 backdrop-blur-xl"
+        className="torob-map-overlay torob-map-attribution invisible absolute left-3 z-10 flex items-center gap-1.5 rounded-2xl border border-border/70 bg-card/95 px-3 py-2 text-xs leading-4 text-muted-foreground shadow-lg shadow-black/10 backdrop-blur-xl"
       >
         <a
           href="https://www.openstreetmap.org/copyright"
@@ -1045,7 +1169,12 @@ export default function MapExperience() {
         </a>
       </div>
 
-      <TorobCheckCharacter className="absolute top-28 left-[18%] z-10 md:top-[18%] md:left-[25%]" />
+      <div
+        data-drawer-snap={isCompactDrawer ? "peek" : "default"}
+        className="torob-map-overlay absolute right-3 z-10"
+      >
+        <TorobCheckCharacter className="size-[76px]" />
+      </div>
 
       <div
         role="group"
@@ -1123,7 +1252,11 @@ export default function MapExperience() {
                     </span>
                     <div className="min-w-0 text-right">
                       <DrawerTitle className="truncate text-base font-bold">
-                        فروشگاه‌های این محدوده
+                        {activeSearchRef.current
+                          ? "نتایج جستجو"
+                          : shopListScope === "all"
+                            ? "همهٔ فروشگاه‌ها"
+                            : "فروشگاه‌های این محدوده"}
                       </DrawerTitle>
                       <p className="mt-1 truncate text-xs text-muted-foreground">
                         تربِ حضوری / {shopCountLabel}
@@ -1185,7 +1318,7 @@ export default function MapExperience() {
                       جستجوی فروشگاه یا محله
                     </FieldLabel>
                     <div className="flex items-center gap-2">
-                      <InputGroup className="h-11 rounded-full bg-background">
+                      <InputGroup className="relative z-10 h-11 rounded-full bg-background">
                         <InputGroupInput
                           id="shop-search"
                           type="text"
@@ -1286,6 +1419,39 @@ export default function MapExperience() {
                 </div>
               )}
 
+              <div className="flex shrink-0 items-center justify-between gap-3 px-4 pt-3 pb-1 sm:px-6">
+                <span className="text-xs font-medium text-muted-foreground">
+                  نمایش فهرست
+                </span>
+                <ToggleGroup
+                  aria-label="محدودهٔ فهرست فروشگاه‌ها"
+                  className="rounded-full bg-muted/50 p-1"
+                  onValueChange={handleShopListScopeChange}
+                  size="sm"
+                  spacing={1}
+                  value={[shopListScope]}
+                  variant="outline"
+                >
+                  <ToggleGroupItem
+                    value="all"
+                    aria-label="نمایش همهٔ نتایج"
+                    title="نمایش همهٔ نتایج"
+                    className="rounded-full data-[state=on]:bg-chart-2/15 data-[state=on]:text-chart-2"
+                  >
+                    همهٔ نتایج
+                  </ToggleGroupItem>
+                  <ToggleGroupItem
+                    value="visible"
+                    aria-label="نمایش نتایج در محدودهٔ نقشه"
+                    title="نمایش فقط موارد داخل محدودهٔ قابل‌مشاهدهٔ نقشه"
+                    className="rounded-full data-[state=on]:bg-chart-2/15 data-[state=on]:text-chart-2"
+                  >
+                    <MapPin aria-hidden="true" data-icon="inline-start" />
+                    در محدوده
+                  </ToggleGroupItem>
+                </ToggleGroup>
+              </div>
+
               <ScrollArea
                 className="min-h-0 flex-1 px-4 **:data-[slot=scroll-area-viewport]:py-4 sm:px-6"
                 onScrollCapture={(event) => {
@@ -1310,15 +1476,20 @@ export default function MapExperience() {
                     اطلاعات فروشگاه‌ها بارگذاری نشد. مطمئن شوید دیتابیس آماده و
                     داده‌ها وارد شده‌اند.
                   </div>
-                ) : shops.length === 0 && shopsStatus === "ready" ? (
+                ) : displayedShops.length === 0 && shopsStatus === "ready" ? (
                   <div className="rounded-2xl bg-muted/70 px-4 py-5 text-center text-sm leading-6 text-muted-foreground">
                     {activeSearchRef.current
-                      ? "فروشگاهی با این نام یا محدوده پیدا نشد."
-                      : "در این محدوده فروشگاهی با موقعیت ثبت‌شده پیدا نشد."}
+                      ? shopListScope === "visible" &&
+                        !activeSearchWithinMapRef.current
+                        ? "در محدودهٔ فعلی فروشگاهی از نتایج جستجو پیدا نشد."
+                        : "فروشگاهی با این نام یا محدوده پیدا نشد."
+                      : shopListScope === "visible"
+                        ? "در این محدوده فروشگاهی با موقعیت ثبت‌شده پیدا نشد."
+                        : "فروشگاهی با موقعیت ثبت‌شده پیدا نشد."}
                   </div>
                 ) : (
                   <div className="flex flex-col gap-2">
-                    {nearestShops.slice(0, visibleShopCount).map((shop) => {
+                    {displayedShops.slice(0, visibleShopCount).map((shop) => {
                       const isSelected = shop.shopId === selectedShopId
                       const price = formatPrice(shop.lowestPrice)
 

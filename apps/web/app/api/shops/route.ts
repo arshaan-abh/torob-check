@@ -1,7 +1,6 @@
 import { getMapShops, type MapShopBounds } from "@workspace/db"
 
-const MAP_SHOP_LIMIT = 1000
-const SEARCH_SHOP_LIMIT = 200
+const SHOP_RESULT_LIMIT = 10000
 const DEFAULT_BOUNDS: MapShopBounds = {
   west: 51.2,
   south: 35.55,
@@ -80,9 +79,14 @@ export async function GET(request: Request) {
   const hasExplicitBounds = ["west", "south", "east", "north"].some((key) =>
     searchParams.has(key)
   )
-  const bounds = readBounds(searchParams, !searchTerm)
+  const allShops = !searchTerm && searchParams.get("all") === "1"
+  const bounds = readBounds(searchParams, !searchTerm && !allShops)
 
-  if ((!searchTerm && !bounds) || (hasExplicitBounds && !bounds)) {
+  if (
+    (!searchTerm && !allShops && !bounds) ||
+    (hasExplicitBounds && !bounds) ||
+    (allShops && hasExplicitBounds)
+  ) {
     return Response.json(
       { error: "Map bounds are invalid." },
       { status: 400, headers: { "Cache-Control": "no-store" } }
@@ -93,7 +97,7 @@ export async function GET(request: Request) {
     const result = await getMapShops({
       bounds,
       searchTerm,
-      limit: searchTerm ? SEARCH_SHOP_LIMIT : MAP_SHOP_LIMIT,
+      limit: SHOP_RESULT_LIMIT,
     })
 
     return Response.json(result, {
