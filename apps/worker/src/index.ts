@@ -89,7 +89,9 @@ function stableDailyObservationTime() {
   )
 }
 
-async function saveFindings(
+// Public pages and social posts are evidence for the assistant only. They must
+// never be promoted into the merchant-confirmed price, stock, or hours tables.
+async function savePublicResearchObservations(
   shopId: string,
   sourceId: string,
   query: string,
@@ -102,7 +104,9 @@ async function saveFindings(
   )
   for (const item of items) {
     const safeUrl = publicHttpsUrl(item.url)
-    if (!safeUrl) continue
+    const title = item.title.trim().slice(0, 200)
+    const excerpt = item.excerpt.trim().slice(0, 1600)
+    if (!safeUrl || !title || !excerpt) continue
     await db
       .insert(researchObservations)
       .values({
@@ -110,8 +114,8 @@ async function saveFindings(
         sourceId,
         query,
         url: safeUrl.toString(),
-        title: item.title.slice(0, 200),
-        excerpt: item.excerpt.slice(0, 1600),
+        title,
+        excerpt,
         observedAt,
         expiresAt,
         payload: {
@@ -127,8 +131,8 @@ async function saveFindings(
         ],
         set: {
           query,
-          title: item.title.slice(0, 200),
-          excerpt: item.excerpt.slice(0, 1600),
+          title,
+          excerpt,
           expiresAt,
           payload: {
             confirmation: "public_unverified",
@@ -230,7 +234,7 @@ async function researchShopQuestion(job: ShopResearchJob) {
     )
     .slice(0, 5)
 
-  let extracted = new Map<string, string>()
+  const extracted = new Map<string, string>()
   if (uniqueResults.length) {
     const extractResponse = await fetch("https://api.tavily.com/extract", {
       method: "POST",
@@ -241,32 +245,33 @@ async function researchShopQuestion(job: ShopResearchJob) {
         extract_depth: "basic",
       }),
       signal: AbortSignal.timeout(12_000),
-    }).catch(() => null)
-    if (extractResponse?.ok) {
-      const extractBody = object(await extractResponse.json().catch(() => null))
-      const extractRows = Array.isArray(extractBody?.results)
-        ? extractBody.results
-        : []
-      for (const value of extractRows) {
-        const row = object(value)
+    })
+    if (!extractResponse.ok)
+      throw new Error(`Tavily extraction failed (${extractResponse.status})`)
+    const extractBody = object(await extractResponse.json())
+    const extractRows = Array.isArray(extractBody?.results)
+      ? extractBody.results
+      : []
+    for (const value of extractRows) {
+      const row = object(value)
+      if (typeof row?.url === "string" && typeof row.raw_content === "string") {
+        const safeUrl = publicHttpsUrl(row.url)
+        const content = row.raw_content.trim()
         if (
-          typeof row?.url === "string" &&
-          typeof row.raw_content === "string"
+          safeUrl &&
+          content &&
+          uniqueResults.some((result) => result.url === safeUrl.toString())
         ) {
-          const safeUrl = publicHttpsUrl(row.url)
-          if (
-            safeUrl &&
-            uniqueResults.some((result) => result.url === safeUrl.toString())
-          ) {
-            extracted.set(safeUrl.toString(), row.raw_content.slice(0, 1600))
-          }
+          extracted.set(safeUrl.toString(), content.slice(0, 1600))
         }
       }
     }
   }
 
   for (const result of uniqueResults) {
-    await saveFindings(
+    const content = extracted.get(result.url)
+    if (!content) continue
+    await savePublicResearchObservations(
       shopId,
       result.sourceId,
       "on-demand approved-source lookup",
@@ -274,7 +279,7 @@ async function researchShopQuestion(job: ShopResearchJob) {
         {
           url: result.url,
           title: result.title,
-          excerpt: (extracted.get(result.url) || result.excerpt).slice(0, 1000),
+          excerpt: content.slice(0, 1000),
         },
       ],
       { observedAt, expiresAfterMs: 24 * 60 * 60 * 1000 }
@@ -312,7 +317,7 @@ async function refreshWebsite(
       return [{ url, title: approvedUrl.hostname, excerpt: content }]
     })
     .slice(0, 1)
-  await saveFindings(
+  await savePublicResearchObservations(
     source.shopId,
     source.sourceId,
     "daily approved website refresh",
@@ -423,7 +428,7 @@ async function refreshInstagram(
     if (!after || !rows.length) break
   }
 
-  await saveFindings(
+  await savePublicResearchObservations(
     source.shopId,
     source.sourceId,
     "daily authorized Instagram profile refresh",

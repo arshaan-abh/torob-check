@@ -38,6 +38,7 @@ export type AssistantOfferResult = {
   specs: Array<{ key: string; section: string; value: string }> | null
   sellerTitle: string | null
   priceToman: string | null
+  budgetFit: "within" | "outside" | "unknown" | null
   stockStatus: "in_stock" | "out_of_stock" | "unknown"
   stockQuantity: number | null
   priceSourceType: string
@@ -156,7 +157,13 @@ function scoreCandidate(
   for (const attribute of input.attributes ?? []) {
     if (haystack.includes(attribute.toLocaleLowerCase("fa-IR"))) score += 2
   }
-  if (result.priceFreshness === "fresh") score += 1
+  if (
+    result.priceToman &&
+    result.priceConfirmation === "merchant_confirmed" &&
+    result.priceFreshness === "fresh"
+  ) {
+    score += 1
+  }
   if (result.stockStatus === "in_stock" && result.stockFreshness === "fresh") {
     score += 2
   }
@@ -200,19 +207,45 @@ export async function searchAssistantOffers(input: AssistantSearchInput) {
     )
   }
 
-  const effectivePrice = sql<number>`COALESCE(${offerCurrentFacts.priceToman}, ${offers.priceToman})::numeric`
+  const freshMerchantPrice = sql`
+    ${offerCurrentFacts.priceToman} IS NOT NULL
+    AND ${offerCurrentFacts.priceToman} > 0
+    AND ${offerCurrentFacts.priceConfirmation} = 'merchant_confirmed'
+    AND ${offerCurrentFacts.priceSourceType} IN ('merchant_portal', 'merchant_feed')
+    AND ${offerCurrentFacts.priceObservedAt} > now() - interval '24 hours'
+    AND ${offerCurrentFacts.priceObservedAt} <= now() + interval '1 minute'
+    AND ${offerCurrentFacts.priceValidUntil} > now()
+  `
+  const priceBounds = []
   if (input.minPriceToman !== undefined) {
-    conditions.push(sql`${effectivePrice} >= ${String(input.minPriceToman)}`)
+    priceBounds.push(
+      sql`${offerCurrentFacts.priceToman} >= ${String(input.minPriceToman)}`
+    )
   }
   if (input.maxPriceToman !== undefined) {
-    conditions.push(sql`${effectivePrice} <= ${String(input.maxPriceToman)}`)
+    priceBounds.push(
+      sql`${offerCurrentFacts.priceToman} <= ${String(input.maxPriceToman)}`
+    )
+  }
+  if (priceBounds.length > 0) {
+    conditions.push(
+      or(
+        sql`NOT (${freshMerchantPrice})`,
+        and(freshMerchantPrice, ...priceBounds)
+      )!
+    )
   }
   if (input.inStockOnly) {
     conditions.push(
       eq(offerCurrentFacts.stockStatus, "in_stock"),
       eq(offerCurrentFacts.stockConfirmation, "merchant_confirmed"),
-      sql`COALESCE(${offerCurrentFacts.stockValidUntil}, ${offerCurrentFacts.validUntil}) > now()`,
-      sql`COALESCE(${offerCurrentFacts.stockObservedAt}, ${offerCurrentFacts.observedAt}) > now() - interval '30 minutes'`
+      inArray(offerCurrentFacts.stockSourceType, [
+        "merchant_portal",
+        "merchant_feed",
+      ]),
+      sql`${offerCurrentFacts.stockValidUntil} > now()`,
+      sql`${offerCurrentFacts.stockObservedAt} > now() - interval '30 minutes'`,
+      sql`${offerCurrentFacts.stockObservedAt} <= now() + interval '1 minute'`
     )
   }
 
@@ -228,13 +261,9 @@ export async function searchAssistantOffers(input: AssistantSearchInput) {
       imageUrls: products.imageUrls,
       specs: products.specs,
       sellerTitle: offers.sellerTitle,
-      basePriceToman: offers.priceToman,
-      basePriceObservedAt: offers.lastPriceChangedAt,
       currentPriceToman: offerCurrentFacts.priceToman,
       stockStatus: offerCurrentFacts.stockStatus,
       stockQuantity: offerCurrentFacts.stockQuantity,
-      sourceType: offerCurrentFacts.sourceType,
-      confirmation: offerCurrentFacts.confirmation,
       priceSourceType: offerCurrentFacts.priceSourceType,
       priceConfirmation: offerCurrentFacts.priceConfirmation,
       stockSourceType: offerCurrentFacts.stockSourceType,
@@ -244,9 +273,6 @@ export async function searchAssistantOffers(input: AssistantSearchInput) {
       priceEvidenceUrl: offerCurrentFacts.priceEvidenceUrl,
       stockObservedAt: offerCurrentFacts.stockObservedAt,
       stockValidUntil: offerCurrentFacts.stockValidUntil,
-      legacyObservedAt: offerCurrentFacts.observedAt,
-      legacyValidUntil: offerCurrentFacts.validUntil,
-      evidenceUrl: offerCurrentFacts.evidenceUrl,
       shopName: shops.name,
       address: shops.address,
       locationLabel: shops.locationLabel,
@@ -258,16 +284,51 @@ export async function searchAssistantOffers(input: AssistantSearchInput) {
     .innerJoin(shops, eq(offers.shopId, shops.shopId))
     .leftJoin(offerCurrentFacts, eq(offers.offerId, offerCurrentFacts.offerId))
     .where(conditions.length ? and(...conditions) : undefined)
-    .orderBy(asc(offers.priceToman), asc(offers.offerId))
+    .orderBy(
+      sql`CASE WHEN ${freshMerchantPrice} THEN 0 ELSE 1 END`,
+      sql`CASE WHEN ${freshMerchantPrice} THEN ${offerCurrentFacts.priceToman} END ASC`,
+      asc(offers.offerId)
+    )
     .limit(Math.min(Math.max(input.limit ?? 12, 1), CANDIDATE_LIMIT))
 
   const candidates = rows.map((row) => {
-    const priceObservedAt =
-      row.priceObservedAt ?? row.legacyObservedAt ?? row.basePriceObservedAt
-    const priceValidUntil = row.priceValidUntil ?? row.legacyValidUntil
-    const stockObservedAt = row.stockObservedAt ?? row.legacyObservedAt
-    const stockValidUntil = row.stockValidUntil ?? row.legacyValidUntil
-    const priceToman = row.currentPriceToman ?? row.basePriceToman
+    const hasCurrentPrice = row.currentPriceToman !== null
+    const hasReportedStock =
+      row.stockStatus !== null && row.stockStatus !== "unknown"
+    const priceObservedAt = row.priceObservedAt
+    const stockObservedAt = row.stockObservedAt
+    const priceConfirmation = row.priceConfirmation ?? "public_unverified"
+    const stockConfirmation = row.stockConfirmation ?? "public_unverified"
+    const priceFreshness = hasCurrentPrice
+      ? freshness(priceObservedAt, row.priceValidUntil, PRICE_FRESHNESS_MS)
+      : "unknown"
+    const stockFreshness =
+      hasReportedStock && row.stockObservedAt
+        ? freshness(stockObservedAt, row.stockValidUntil, STOCK_FRESHNESS_MS)
+        : "unknown"
+    const currentPriceNumber = Number(row.currentPriceToman)
+    const hasFreshMerchantPrice =
+      hasCurrentPrice &&
+      Number.isSafeInteger(currentPriceNumber) &&
+      currentPriceNumber > 0 &&
+      (row.priceSourceType === "merchant_portal" ||
+        row.priceSourceType === "merchant_feed") &&
+      priceConfirmation === "merchant_confirmed" &&
+      priceFreshness === "fresh"
+    const hasFreshMerchantStock =
+      hasReportedStock &&
+      (row.stockSourceType === "merchant_portal" ||
+        row.stockSourceType === "merchant_feed") &&
+      stockConfirmation === "merchant_confirmed" &&
+      stockFreshness === "fresh"
+    const hasBudget =
+      input.minPriceToman !== undefined || input.maxPriceToman !== undefined
+    const withinBudget =
+      hasFreshMerchantPrice &&
+      (input.minPriceToman === undefined ||
+        currentPriceNumber >= input.minPriceToman) &&
+      (input.maxPriceToman === undefined ||
+        currentPriceNumber <= input.maxPriceToman)
     const kilometers = distanceKm(input.center, row.lat, row.lon)
     return {
       offerId: row.offerId,
@@ -280,27 +341,23 @@ export async function searchAssistantOffers(input: AssistantSearchInput) {
       imageUrls: row.imageUrls,
       specs: row.specs,
       sellerTitle: row.sellerTitle,
-      priceToman,
-      stockStatus: row.stockStatus ?? "unknown",
-      stockQuantity: row.stockQuantity,
-      priceSourceType: row.priceSourceType ?? row.sourceType ?? "catalog",
-      priceConfirmation:
-        row.priceConfirmation ?? row.confirmation ?? "public_unverified",
-      stockSourceType: row.stockSourceType ?? row.sourceType ?? "catalog",
-      stockConfirmation:
-        row.stockConfirmation ?? row.confirmation ?? "public_unverified",
+      priceToman: hasFreshMerchantPrice ? row.currentPriceToman : null,
+      budgetFit: hasBudget ? (withinBudget ? "within" : "unknown") : null,
+      stockStatus: hasFreshMerchantStock
+        ? (row.stockStatus ?? "unknown")
+        : "unknown",
+      stockQuantity: hasFreshMerchantStock ? row.stockQuantity : null,
+      priceSourceType: row.priceSourceType ?? "catalog",
+      priceConfirmation,
+      stockSourceType: row.stockSourceType ?? "catalog",
+      stockConfirmation,
       priceObservedAt: priceObservedAt?.toISOString() ?? null,
       stockObservedAt: stockObservedAt?.toISOString() ?? null,
-      priceFreshness: freshness(
-        priceObservedAt,
-        priceValidUntil,
-        PRICE_FRESHNESS_MS
-      ),
-      stockFreshness:
-        row.stockStatus && row.stockStatus !== "unknown"
-          ? freshness(stockObservedAt, stockValidUntil, STOCK_FRESHNESS_MS)
-          : "unknown",
-      evidenceUrl: safeEvidenceUrl(row.priceEvidenceUrl ?? row.evidenceUrl),
+      priceFreshness,
+      stockFreshness,
+      evidenceUrl: hasFreshMerchantPrice
+        ? safeEvidenceUrl(row.priceEvidenceUrl)
+        : null,
       shopName: row.shopName,
       address: row.address,
       locationLabel: row.locationLabel,
@@ -356,6 +413,8 @@ export async function getAssistantShopDetails(shopId: string) {
           eq(shopFactObservations.shopId, shopId),
           eq(shopFactObservations.factKey, "weeklyHours"),
           eq(shopFactObservations.confirmation, "merchant_confirmed"),
+          sql`${shopFactObservations.observedAt} > now() - interval '7 days'`,
+          sql`${shopFactObservations.observedAt} <= now() + interval '1 minute'`,
           sql`${shopFactObservations.validUntil} > now()`
         )
       )
@@ -369,6 +428,8 @@ export async function getAssistantShopDetails(shopId: string) {
           eq(shopFactObservations.shopId, shopId),
           eq(shopFactObservations.factKey, "contacts"),
           eq(shopFactObservations.confirmation, "merchant_confirmed"),
+          sql`${shopFactObservations.observedAt} > now() - interval '30 days'`,
+          sql`${shopFactObservations.observedAt} <= now() + interval '1 minute'`,
           sql`${shopFactObservations.validUntil} > now()`
         )
       )
@@ -387,7 +448,7 @@ export async function getAssistantShopDetails(shopId: string) {
   const hoursObservation = hoursRows[0]
   const contactsObservation = contactRows[0]
   const hours = hoursObservation?.factValue ?? shop.weeklyHours
-  const contacts = contactsObservation?.factValue ?? shop.contacts
+  const contacts = contactsObservation?.factValue ?? null
 
   return {
     ...shop,

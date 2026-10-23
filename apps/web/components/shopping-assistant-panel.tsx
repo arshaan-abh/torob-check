@@ -44,6 +44,7 @@ type Offer = {
   brandName: string | null
   model: string | null
   priceToman: string | null
+  budgetFit: "within" | "outside" | "unknown" | null
   priceFreshness: string
   stockStatus: string
   stockFreshness: string
@@ -61,7 +62,11 @@ type Offer = {
 
 const numberFormat = new Intl.NumberFormat("fa-IR")
 function priceLabel(offer: Offer) {
-  if (!offer.priceToman) return "قیمت ثبت نشده"
+  if (!offer.priceToman) {
+    return offer.priceFreshness === "stale"
+      ? "آخرین قیمت ثبت‌شده قدیمی است؛ قیمت امروز تأیید نشده"
+      : "قیمت تازه و تأییدشده در دسترس نیست"
+  }
   const amount = Number(offer.priceToman)
   if (!Number.isFinite(amount)) return "قیمت ثبت نشده"
   const freshness =
@@ -92,18 +97,27 @@ function OfferCards({ offers }: { offers: Offer[] }) {
             {offer.productTitle ?? offer.sellerTitle ?? "کالا"}
           </h3>
           <p className="mt-1 text-sm">{priceLabel(offer)}</p>
+          {offer.budgetFit === "unknown" && (
+            <p className="mt-1 text-xs text-muted-foreground">
+              قیمت تازه نداریم و نمی‌توانیم قرارگرفتن در بودجه را تأیید کنیم.
+            </p>
+          )}
           <p className="mt-1 text-xs text-muted-foreground">
             {offer.shopName ?? "فروشگاه"}
             {offer.address ? ` · ${offer.address}` : ""}
           </p>
           <p className="mt-1 text-xs text-muted-foreground">
-            {offer.stockStatus === "in_stock" &&
-            offer.stockFreshness === "fresh" &&
-            offer.stockConfirmation === "merchant_confirmed"
+            {offer.stockFreshness === "fresh" &&
+            offer.stockConfirmation === "merchant_confirmed" &&
+            offer.stockStatus === "in_stock"
               ? "موجودی تازه تأیید شده"
-              : offer.stockFreshness === "stale"
-                ? "موجودی قدیمی است"
-                : "موجودی تأیید نشده"}
+              : offer.stockFreshness === "fresh" &&
+                  offer.stockConfirmation === "merchant_confirmed" &&
+                  offer.stockStatus === "out_of_stock"
+                ? "ناموجودی تازه تأیید شده"
+                : offer.stockFreshness === "stale"
+                  ? "آخرین وضعیت موجودی قدیمی است"
+                  : "موجودی تازه تأیید نشده"}
             {offer.distanceKm !== null
               ? ` · ${numberFormat.format(Math.round(offer.distanceKm * 10) / 10)} کیلومتر`
               : ""}
