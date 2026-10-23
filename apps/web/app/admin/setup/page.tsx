@@ -25,6 +25,7 @@ export default function AdminSetupPage() {
     event.preventDefault()
     setBusy(true)
     setStatus("")
+    let accountCreated = false
     try {
       const result = await authClient.signUp.email({
         name: name.trim(),
@@ -35,12 +36,37 @@ export default function AdminSetupPage() {
         setStatus(result.error.message ?? "ساخت حساب انجام نشد.")
         return
       }
+      accountCreated = true
       setCreated(true)
+
+      // The bootstrap admin is marked verified by the user-create hook, so it
+      // can sign in right away even when no email provider has been configured.
+      const signIn = await authClient.signIn.email({
+        email: email.trim(),
+        password,
+      })
+      if (signIn.error) {
+        setStatus(
+          "حساب ساخته شد. اگر این حساب اولین مدیر نیست، برای ورود باید ایمیلش تأیید شود."
+        )
+        return
+      }
+
+      const access = await fetch("/api/admin/settings", { cache: "no-store" })
+      if (access.ok) {
+        window.location.replace("/admin/settings")
+        return
+      }
+
       setStatus(
-        "حساب ساخته شد. اگر مدیر سامانه‌ای وجود نداشته باشد، این نخستین حساب مدیر می‌شود. ایمیل‌های SYSTEM_ADMIN_EMAILS نیز دسترسی مدیر دارند."
+        "حساب ساخته شد، اما دسترسی مدیر برای آن فعال نیست. با ایمیل مدیر سامانه ثبت‌نام کنید یا از مدیر فعلی کمک بگیرید."
       )
     } catch {
-      setStatus("ساخت حساب انجام نشد. اتصال را بررسی و دوباره تلاش کنید.")
+      setStatus(
+        accountCreated
+          ? "حساب ساخته شد. اکنون می‌توانید وارد شوید؛ اگر ورود انجام نشد، ایمیل این حساب باید تأیید شود."
+          : "ساخت حساب انجام نشد. اتصال را بررسی و دوباره تلاش کنید."
+      )
     } finally {
       setBusy(false)
     }
@@ -56,8 +82,9 @@ export default function AdminSetupPage() {
         <div>
           <h1 className="text-2xl font-bold">راه‌اندازی مدیر سامانه</h1>
           <p className="mt-2 text-sm leading-6 text-muted-foreground">
-            اولین حساب ثبت‌شده، در نبود مدیر سامانه، مدیر می‌شود. ایمیل‌های
-            <code dir="ltr">SYSTEM_ADMIN_EMAILS</code> نیز دسترسی مدیر دارند.
+            اگر هنوز حساب مدیر سامانه‌ای در سیستم نباشد، اولین حسابی که می‌سازید
+            مدیر می‌شود. ایمیل‌های
+            <code dir="ltr">SYSTEM_ADMIN_EMAILS</code> هم دسترسی مدیر دارند.
           </p>
         </div>
       </header>
@@ -65,9 +92,9 @@ export default function AdminSetupPage() {
         <CardHeader>
           <CardTitle>{created ? "حساب آماده است" : "ساخت حساب مدیر"}</CardTitle>
           <CardDescription>
-            تنظیم SMTP، Resend و کلیدهای ایمیل برای ورود نخستین مدیر لازم نیست.
-            حساب‌های فروشنده برای مدیریت فروشگاه همچنان به ایمیل تأییدشده نیاز
-            دارند.
+            برای ساخت و ورود نخستین مدیر، تنظیم ایمیل لازم نیست. فروشندگان برای
+            مدیریت فروشگاه باید ایمیلشان را تأیید کنند؛ ایمیل را می‌توانید بعداً
+            از تنظیمات فعال کنید.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -133,8 +160,8 @@ export default function AdminSetupPage() {
                 {busy ? "در حال ساخت حساب" : "ساخت حساب مدیر"}
               </Button>
               <p className="text-sm text-muted-foreground">
-                اگر <code dir="ltr">SYSTEM_ADMIN_EMAILS</code> تنظیم شده، با یکی
-                از ایمیل‌های همان فهرست ثبت‌نام کنید.{" "}
+                ایمیل‌های فهرست <code dir="ltr">SYSTEM_ADMIN_EMAILS</code> نیز
+                دسترسی مدیر دارند.{" "}
                 <Link
                   className="text-primary underline underline-offset-4"
                   href="/admin/login"
