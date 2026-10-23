@@ -1,7 +1,8 @@
 "use client"
 
-import { useEffect, useState } from "react"
-import { KeyRound, Save } from "lucide-react"
+import { useCallback, useEffect, useState } from "react"
+import { useRouter } from "next/navigation"
+import { KeyRound, RotateCcw, Save, Trash2 } from "lucide-react"
 import { Button } from "@workspace/ui/components/button"
 import {
   Card,
@@ -10,9 +11,26 @@ import {
   CardHeader,
   CardTitle,
 } from "@workspace/ui/components/card"
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupButton,
+  InputGroupInput,
+} from "@workspace/ui/components/input-group"
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@workspace/ui/components/select"
+
+type AiProvider = "gateway" | "google" | "openrouter" | "openai-compatible"
+type AccessState = "checking" | "authorized" | "forbidden" | "error"
 
 type SettingValues = {
-  aiProvider: string
+  aiProvider: AiProvider
   aiModel: string
   openrouterBaseUrl: string
   compatibleBaseUrl: string
@@ -21,6 +39,16 @@ type SettingValues = {
   smtpFrom: string
 }
 type SecretStatus = Record<string, { configured: boolean }>
+
+const AI_PROVIDER_OPTIONS: Array<{ value: AiProvider; label: string }> = [
+  { value: "gateway", label: "Vercel AI Gateway" },
+  { value: "google", label: "Google Gemini" },
+  { value: "openrouter", label: "OpenRouter" },
+  { value: "openai-compatible", label: "OpenAI compatible" },
+]
+const AI_PROVIDER_LABELS = Object.fromEntries(
+  AI_PROVIDER_OPTIONS.map(({ value, label }) => [value, label])
+) as Record<AiProvider, string>
 
 const LABELS: Record<string, string> = {
   aiGatewayApiKey: "AI Gateway key",
@@ -32,7 +60,12 @@ const LABELS: Record<string, string> = {
   smtpUrl: "SMTP connection URL",
 }
 
+function isAiProvider(value: unknown): value is AiProvider {
+  return AI_PROVIDER_OPTIONS.some((provider) => provider.value === value)
+}
+
 export function AdminSettingsForm() {
+  const router = useRouter()
   const [values, setValues] = useState<SettingValues>({
     aiProvider: "gateway",
     aiModel: "",
@@ -45,65 +78,124 @@ export function AdminSettingsForm() {
   const [secretStatus, setSecretStatus] = useState<SecretStatus>({})
   const [secrets, setSecrets] = useState<Record<string, string>>({})
   const [clearSecrets, setClearSecrets] = useState<string[]>([])
-  const [status, setStatus] = useState("در حال بارگذاری تنظیمات")
+  const [status, setStatus] = useState("در حال بررسی دسترسی مدیر")
+  const [accessState, setAccessState] = useState<AccessState>("checking")
   const [busy, setBusy] = useState(false)
 
-  async function load() {
-    const response = await fetch("/api/admin/settings", { cache: "no-store" })
-    const body = await response.json()
-    if (!response.ok) {
-      setStatus(body.error ?? "دسترسی به تنظیمات ممکن نیست.")
-      return
-    }
-    const data = body.settings as Record<string, unknown>
-    setValues({
-      aiProvider: String(data.aiProvider ?? "gateway"),
-      aiModel: String(data.aiModel ?? ""),
-      openrouterBaseUrl: String(
-        data.openrouterBaseUrl ?? "https://openrouter.ai/api/v1"
-      ),
-      compatibleBaseUrl: String(data.compatibleBaseUrl ?? ""),
-      instagramAppId: String(data.instagramAppId ?? ""),
-      instagramApiVersion: String(data.instagramApiVersion ?? "v26.0"),
-      smtpFrom: String(data.smtpFrom ?? ""),
-    })
-    setSecretStatus(
-      Object.fromEntries(
-        Object.entries(data)
-          .filter(([, value]) => typeof value === "object" && value !== null)
-          .map(([key, value]) => [key, value as { configured: boolean }])
+  const redirectForAccess = useCallback(
+    (response: Response, body: Record<string, unknown>) => {
+      if (response.status === 503 && body.setupRequired === true) {
+        router.replace("/admin/setup")
+        return true
+      }
+      if (response.status === 401) {
+        router.replace("/admin/login?returnTo=%2Fadmin%2Fsettings")
+        return true
+      }
+      if (
+        response.status === 403 &&
+        body.error === "System administrator access required."
+      ) {
+        setAccessState("forbidden")
+        setStatus("این حساب دسترسی مدیر سامانه ندارد.")
+        return true
+      }
+      return false
+    },
+    [router]
+  )
+
+  const load = useCallback(async () => {
+    setAccessState("checking")
+    setStatus("در حال بارگذاری تنظیمات")
+    try {
+      const response = await fetch("/api/admin/settings", { cache: "no-store" })
+      const body = (await response.json().catch(() => ({}))) as Record<
+        string,
+        unknown
+      >
+      if (!response.ok) {
+        if (!redirectForAccess(response, body)) {
+          setAccessState("error")
+          setStatus(
+            typeof body.error === "string"
+              ? body.error
+              : "دسترسی به تنظیمات ممکن نیست. دوباره تلاش کنید."
+          )
+        }
+        return
+      }
+
+      const data = body.settings as Record<string, unknown>
+      setValues({
+        aiProvider: isAiProvider(data.aiProvider) ? data.aiProvider : "gateway",
+        aiModel: String(data.aiModel ?? ""),
+        openrouterBaseUrl: String(
+          data.openrouterBaseUrl ?? "https://openrouter.ai/api/v1"
+        ),
+        compatibleBaseUrl: String(data.compatibleBaseUrl ?? ""),
+        instagramAppId: String(data.instagramAppId ?? ""),
+        instagramApiVersion: String(data.instagramApiVersion ?? "v26.0"),
+        smtpFrom: String(data.smtpFrom ?? ""),
+      })
+      setSecretStatus(
+        Object.fromEntries(
+          Object.entries(data)
+            .filter(([, value]) => typeof value === "object" && value !== null)
+            .map(([key, value]) => [key, value as { configured: boolean }])
+        )
       )
-    )
-    setStatus(
-      body.encryptionReady
-        ? "کلیدها در پایگاه داده به‌صورت رمزگذاری‌شده ذخیره می‌شوند."
-        : "برای ذخیره کلیدها، SETTINGS_ENCRYPTION_KEY را روی سرور تنظیم کنید."
-    )
-  }
+      setAccessState("authorized")
+      setStatus(
+        body.encryptionReady
+          ? "کلیدها در پایگاه داده به‌صورت رمزگذاری‌شده ذخیره می‌شوند."
+          : "برای ذخیره کلیدها، SETTINGS_ENCRYPTION_KEY را روی سرور تنظیم کنید."
+      )
+    } catch {
+      setAccessState("error")
+      setStatus("تنظیمات بارگذاری نشد. اتصال را بررسی و دوباره تلاش کنید.")
+    }
+  }, [redirectForAccess])
 
   useEffect(() => {
     void load()
-  }, [])
+  }, [load])
 
   async function save(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setBusy(true)
     setStatus("در حال ذخیره تنظیمات")
-    const response = await fetch("/api/admin/settings", {
-      method: "PATCH",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ values: { ...values, ...secrets }, clearSecrets }),
-    })
-    const body = await response.json()
-    setBusy(false)
-    if (!response.ok) {
-      setStatus(body.error ?? "ذخیره تنظیمات انجام نشد.")
-      return
+    try {
+      const response = await fetch("/api/admin/settings", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          values: { ...values, ...secrets },
+          clearSecrets,
+        }),
+      })
+      const body = (await response.json().catch(() => ({}))) as Record<
+        string,
+        unknown
+      >
+      if (!response.ok) {
+        if (!redirectForAccess(response, body))
+          setStatus(
+            typeof body.error === "string"
+              ? body.error
+              : "ذخیره تنظیمات انجام نشد."
+          )
+        return
+      }
+      setSecrets({})
+      setClearSecrets([])
+      await load()
+      setStatus("تنظیمات ذخیره شد.")
+    } catch {
+      setStatus("ذخیره تنظیمات انجام نشد. اتصال را بررسی کنید.")
+    } finally {
+      setBusy(false)
     }
-    setSecrets({})
-    setClearSecrets([])
-    await load()
-    setStatus("تنظیمات ذخیره شد.")
   }
 
   function field(key: keyof SettingValues, label: string, placeholder = "") {
@@ -123,46 +215,74 @@ export function AdminSettingsForm() {
   }
 
   function secretField(key: string) {
-    const configured = secretStatus[key]?.configured
+    const configured = secretStatus[key]?.configured ?? false
+    const pendingClear = clearSecrets.includes(key)
+
     return (
-      <label className="grid gap-2 text-sm font-medium" key={key}>
-        {LABELS[key]}
-        <input
-          className="h-10 rounded-lg border border-input bg-background px-3 font-normal outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          type="password"
-          autoComplete="new-password"
-          value={secrets[key] ?? ""}
-          placeholder={
-            configured
-              ? "برای حفظ کلید ذخیره‌شده خالی بگذارید"
-              : "کلید را وارد کنید"
-          }
-          onChange={(event) => {
-            setSecrets((current) => ({ ...current, [key]: event.target.value }))
-            setClearSecrets((current) => current.filter((item) => item !== key))
-          }}
-        />
+      <div className="grid gap-2 text-sm font-medium" key={key}>
+        <label htmlFor={`setting-${key}`}>{LABELS[key]}</label>
+        <InputGroup className="h-10 bg-background">
+          <InputGroupInput
+            id={`setting-${key}`}
+            type="password"
+            autoComplete="new-password"
+            className="h-full px-3 text-sm"
+            value={secrets[key] ?? ""}
+            placeholder={
+              configured
+                ? "برای حفظ کلید ذخیره‌شده خالی بگذارید"
+                : "کلید را وارد کنید"
+            }
+            onChange={(event) => {
+              setSecrets((current) => ({
+                ...current,
+                [key]: event.target.value,
+              }))
+              setClearSecrets((current) =>
+                current.filter((item) => item !== key)
+              )
+            }}
+          />
+          <InputGroupAddon align="inline-end" className="py-0">
+            <InputGroupButton
+              aria-label={pendingClear ? "لغو حذف کلید" : "حذف کلید ذخیره‌شده"}
+              title={pendingClear ? "لغو حذف" : "حذف کلید ذخیره‌شده"}
+              disabled={!pendingClear && !configured && !secrets[key]}
+              variant={pendingClear ? "destructive" : "ghost"}
+              size="icon-xs"
+              onClick={() => {
+                if (pendingClear) {
+                  setClearSecrets((current) =>
+                    current.filter((item) => item !== key)
+                  )
+                  return
+                }
+                if (configured) {
+                  setClearSecrets((current) => [...current, key])
+                }
+                setSecrets((current) => ({ ...current, [key]: "" }))
+              }}
+            >
+              {pendingClear ? (
+                <RotateCcw aria-hidden="true" />
+              ) : (
+                <Trash2 aria-hidden="true" />
+              )}
+            </InputGroupButton>
+          </InputGroupAddon>
+        </InputGroup>
         <span className="flex items-center gap-2 text-xs text-muted-foreground">
           <span
             aria-hidden="true"
-            className={`size-2 rounded-full ${configured ? "bg-emerald-600" : "bg-muted-foreground/40"}`}
+            className={`size-2 rounded-full ${configured && !pendingClear ? "bg-emerald-600" : "bg-muted-foreground/40"}`}
           />
-          {configured ? "تنظیم شده" : "تنظیم نشده"}
-          <button
-            type="button"
-            className="underline underline-offset-4"
-            onClick={() =>
-              setClearSecrets((current) =>
-                current.includes(key)
-                  ? current.filter((item) => item !== key)
-                  : [...current, key]
-              )
-            }
-          >
-            {clearSecrets.includes(key) ? "لغو پاک‌کردن" : "پاک‌کردن"}
-          </button>
+          {pendingClear
+            ? "پس از ذخیره حذف می‌شود"
+            : configured
+              ? "تنظیم شده"
+              : "تنظیم نشده"}
         </span>
-      </label>
+      </div>
     )
   }
 
@@ -176,103 +296,174 @@ export function AdminSettingsForm() {
         <div>
           <h1 className="text-2xl font-bold">تنظیمات سرویس‌ها</h1>
           <p className="mt-2 text-sm text-muted-foreground">
-            کلیدهای مدل، پژوهش وب، اینستاگرام و ایمیل فقط برای مدیران نمایش داده
-            می‌شود و کلیدهای محرمانه رمزگذاری می‌شوند.
+            کلیدهای مدل، پژوهش وب، اینستاگرام و ایمیل فقط برای مدیران سامانه
+            نمایش داده می‌شود و کلیدهای محرمانه رمزگذاری می‌شوند.
           </p>
         </div>
       </header>
-      <form className="grid gap-5" onSubmit={save}>
+
+      {accessState === "checking" ? (
         <Card>
-          <CardHeader>
-            <CardTitle>دستیار هوش مصنوعی</CardTitle>
-            <CardDescription>
-              مدل انتخابی باید از ابزارها و پاسخ جریانی پشتیبانی کند.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="grid gap-4 sm:grid-cols-2">
-            <label className="grid gap-2 text-sm font-medium">
-              ارائه‌دهنده
-              <select
-                className="h-10 rounded-lg border border-input bg-background px-3"
-                value={values.aiProvider}
-                onChange={(event) =>
-                  setValues((current) => ({
-                    ...current,
-                    aiProvider: event.target.value,
-                  }))
-                }
-              >
-                <option value="gateway">Vercel AI Gateway</option>
-                <option value="google">Google Gemini</option>
-                <option value="openrouter">OpenRouter</option>
-                <option value="openai-compatible">OpenAI compatible</option>
-              </select>
-            </label>
-            {field("aiModel", "شناسه مدل", "provider/model")}
-            {secretField("aiGatewayApiKey")}
-            {secretField("googleApiKey")}
-            {secretField("openrouterApiKey")}
-            {field(
-              "openrouterBaseUrl",
-              "نشانی OpenRouter",
-              "https://openrouter.ai/api/v1"
-            )}
-            {secretField("compatibleApiKey")}
-            {field(
-              "compatibleBaseUrl",
-              "نشانی سرویس سازگار",
-              "https://api.example.com/v1"
-            )}
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>پژوهش منابع فروشگاه</CardTitle>
-            <CardDescription>
-              نتیجه وب عمومی همیشه با برچسب تأییدنشده نشان داده می‌شود.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="grid gap-4 sm:grid-cols-2">
-            {secretField("tavilyApiKey")}
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>Instagram و تأیید لینک حساب</CardTitle>
-            <CardDescription>
-              اتصال رسمی فقط برای حساب‌های حرفه‌ای مجازشده است. این نسخه پژوهش
-              پست‌های عمومی را پشتیبانی می‌کند؛ پیام‌رسانی خودکار با فروشگاه
-              فعال نیست و دستیار برای تماس، متن آماده و لینک پروفایل می‌دهد.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="grid gap-4 sm:grid-cols-2">
-            {field("instagramAppId", "Instagram App ID")}
-            {secretField("instagramAppSecret")}
-            {field("instagramApiVersion", "نسخه Graph API", "v26.0")}
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>ایمیل حساب فروشنده</CardTitle>
-            <CardDescription>
-              برای تأیید ایمیل و بازیابی گذرواژه استفاده می‌شود.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="grid gap-4 sm:grid-cols-2">
-            {secretField("smtpUrl")}
-            {field("smtpFrom", "نشانی فرستنده", "no-reply@example.com")}
-          </CardContent>
-        </Card>
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <p role="status" className="text-sm text-muted-foreground">
+          <CardContent
+            className="py-6 text-sm text-muted-foreground"
+            role="status"
+          >
             {status}
-          </p>
-          <Button type="submit" disabled={busy}>
-            <Save aria-hidden="true" className="size-4" />
-            ذخیره تنظیمات
-          </Button>
-        </div>
-      </form>
+          </CardContent>
+        </Card>
+      ) : accessState === "forbidden" ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>دسترسی مدیر سامانه لازم است</CardTitle>
+            <CardDescription>
+              با حسابی وارد شوید که ایمیل آن در تنظیمات سرور به‌عنوان مدیر
+              سامانه ثبت شده است.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button
+              type="button"
+              onClick={() =>
+                router.push("/admin/login?returnTo=%2Fadmin%2Fsettings")
+              }
+            >
+              ورود مدیر سامانه
+            </Button>
+          </CardContent>
+        </Card>
+      ) : accessState === "error" ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>تنظیمات در دسترس نیست</CardTitle>
+            <CardDescription role="status">{status}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button type="button" variant="outline" onClick={() => void load()}>
+              تلاش دوباره
+            </Button>
+          </CardContent>
+        </Card>
+      ) : (
+        <form className="grid gap-5" onSubmit={save}>
+          <Card>
+            <CardHeader>
+              <CardTitle>دستیار هوش مصنوعی</CardTitle>
+              <CardDescription>
+                مدل انتخابی باید از ابزارها و پاسخ جریانی پشتیبانی کند.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="grid gap-4 sm:grid-cols-2">
+              <div className="grid gap-2 text-sm font-medium">
+                <span id="ai-provider-label">ارائه‌دهنده</span>
+                <Select
+                  items={AI_PROVIDER_OPTIONS}
+                  value={values.aiProvider}
+                  onValueChange={(value) => {
+                    if (isAiProvider(value))
+                      setValues((current) => ({
+                        ...current,
+                        aiProvider: value,
+                      }))
+                  }}
+                >
+                  <SelectTrigger
+                    aria-labelledby="ai-provider-label"
+                    className="h-10 w-full bg-background"
+                  >
+                    <SelectValue>
+                      {(value: string | null) =>
+                        value && isAiProvider(value)
+                          ? AI_PROVIDER_LABELS[value]
+                          : "انتخاب ارائه‌دهنده"
+                      }
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      {AI_PROVIDER_OPTIONS.map((provider) => (
+                        <SelectItem key={provider.value} value={provider.value}>
+                          {provider.label}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+              </div>
+              {field("aiModel", "شناسه مدل", "provider/model")}
+              {values.aiProvider === "gateway" &&
+                secretField("aiGatewayApiKey")}
+              {values.aiProvider === "google" && secretField("googleApiKey")}
+              {values.aiProvider === "openrouter" && (
+                <>
+                  {secretField("openrouterApiKey")}
+                  {field(
+                    "openrouterBaseUrl",
+                    "نشانی OpenRouter",
+                    "https://openrouter.ai/api/v1"
+                  )}
+                </>
+              )}
+              {values.aiProvider === "openai-compatible" && (
+                <>
+                  {secretField("compatibleApiKey")}
+                  {field(
+                    "compatibleBaseUrl",
+                    "نشانی سرویس سازگار",
+                    "https://api.example.com/v1"
+                  )}
+                </>
+              )}
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle>پژوهش منابع فروشگاه</CardTitle>
+              <CardDescription>
+                نتیجه وب عمومی همیشه با برچسب تأییدنشده نشان داده می‌شود.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="grid gap-4 sm:grid-cols-2">
+              {secretField("tavilyApiKey")}
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle>Instagram و تأیید لینک حساب</CardTitle>
+              <CardDescription>
+                اتصال رسمی فقط برای حساب‌های حرفه‌ای مجازشده است. این نسخه پژوهش
+                پست‌های عمومی را پشتیبانی می‌کند؛ پیام‌رسانی خودکار با فروشگاه
+                فعال نیست و دستیار برای تماس، متن آماده و لینک پروفایل می‌دهد.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="grid gap-4 sm:grid-cols-2">
+              {field("instagramAppId", "Instagram App ID")}
+              {secretField("instagramAppSecret")}
+              {field("instagramApiVersion", "نسخه Graph API", "v26.0")}
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle>ایمیل حساب فروشنده</CardTitle>
+              <CardDescription>
+                برای تأیید ایمیل و بازیابی گذرواژه استفاده می‌شود.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="grid gap-4 sm:grid-cols-2">
+              {secretField("smtpUrl")}
+              {field("smtpFrom", "نشانی فرستنده", "no-reply@example.com")}
+            </CardContent>
+          </Card>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p role="status" className="text-sm text-muted-foreground">
+              {status}
+            </p>
+            <Button type="submit" disabled={busy}>
+              <Save aria-hidden="true" className="size-4" />
+              ذخیره تنظیمات
+            </Button>
+          </div>
+        </form>
+      )}
     </main>
   )
 }

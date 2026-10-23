@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server"
 import { and, desc, eq } from "drizzle-orm"
 import { getDb, merchantAuditLogs, shopSources, shops } from "@workspace/db"
-import { getMerchantUser, isMerchantAdmin } from "@/lib/merchant-session"
+import { getVerifiedUser, isSystemAdmin } from "@/lib/merchant-session"
 import { parsePublicHttpsUrl } from "@/lib/safe-url"
 import {
   enforceRateLimit,
@@ -25,10 +25,10 @@ export async function POST(request: Request) {
       { error: "Request origin is not allowed." },
       { status: 403 }
     )
-  const actor = await getMerchantUser(request)
-  if (!actor || !isMerchantAdmin(actor.email))
+  const actor = await getVerifiedUser(request)
+  if (!actor || !isSystemAdmin(actor.email))
     return NextResponse.json(
-      { error: "Admin access required." },
+      { error: "System administrator access required." },
       { status: 403 }
     )
   const rateLimit = await enforceRateLimit(request, "admin-write", 60)
@@ -91,28 +91,26 @@ export async function POST(request: Request) {
       status: shopSources.status,
       url: shopSources.url,
     })
-  await db
-    .insert(merchantAuditLogs)
-    .values({
-      actorId: actor.id,
-      shopId: shop.shopId,
-      action: "shop.source.admin_create",
-      entityType: "shop_source",
-      entityId: source!.id,
-      afterValue: {
-        url: source!.url,
-        sourceType: "website",
-        status: source!.status,
-      },
-    })
+  await db.insert(merchantAuditLogs).values({
+    actorId: actor.id,
+    shopId: shop.shopId,
+    action: "shop.source.admin_create",
+    entityType: "shop_source",
+    entityId: source!.id,
+    afterValue: {
+      url: source!.url,
+      sourceType: "website",
+      status: source!.status,
+    },
+  })
   return NextResponse.json({ source }, { status: 201 })
 }
 
 export async function GET(request: Request) {
-  const actor = await getMerchantUser(request)
-  if (!actor || !isMerchantAdmin(actor.email))
+  const actor = await getVerifiedUser(request)
+  if (!actor || !isSystemAdmin(actor.email))
     return NextResponse.json(
-      { error: "Admin access required." },
+      { error: "System administrator access required." },
       { status: 403 }
     )
   const sources = await getDb()
@@ -139,10 +137,10 @@ export async function PATCH(request: Request) {
       { error: "Request origin is not allowed." },
       { status: 403 }
     )
-  const actor = await getMerchantUser(request)
-  if (!actor || !isMerchantAdmin(actor.email))
+  const actor = await getVerifiedUser(request)
+  if (!actor || !isSystemAdmin(actor.email))
     return NextResponse.json(
-      { error: "Admin access required." },
+      { error: "System administrator access required." },
       { status: 403 }
     )
   const rateLimit = await enforceRateLimit(request, "admin-write", 60)

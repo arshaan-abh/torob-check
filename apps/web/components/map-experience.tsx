@@ -63,7 +63,10 @@ import {
 import { cn } from "@workspace/ui/lib/utils"
 import { TorobCheckCharacter } from "@/app/components/torob-check-character"
 import { ShoppingAssistantPanel } from "@/components/shopping-assistant-panel"
-import type { ShoppingAssistantMapContext } from "@/components/shopping-assistant-panel"
+import type {
+  ShoppingAssistantMapContext,
+  ShoppingAssistantOfferSelection,
+} from "@/components/shopping-assistant-panel"
 
 const OPENFREEMAP_STYLE = "https://tiles.openfreemap.org/styles/fiord"
 const COMPACT_DRAWER_SNAP_POINT = "6.25rem"
@@ -762,6 +765,32 @@ export default function MapExperience() {
     })
   }, [])
 
+  const selectAssistantOffer = useCallback(
+    (offer: ShoppingAssistantOfferSelection) => {
+      if (offer.lat === null || offer.lon === null) return
+      const existingShop =
+        shopsRef.current.find((shop) => shop.shopId === offer.shopId) ??
+        shopListItems.find((shop) => shop.shopId === offer.shopId)
+      const shop: Shop = {
+        shopId: offer.shopId,
+        name: existingShop?.name ?? offer.shopName,
+        address: existingShop?.address ?? offer.address,
+        locationLabel: existingShop?.locationLabel ?? offer.locationLabel,
+        lat: offer.lat,
+        lon: offer.lon,
+        categoryNames:
+          existingShop?.categoryNames ??
+          (offer.categoryName ? [offer.categoryName] : null),
+        offerCount: existingShop?.offerCount ?? 1,
+        lowestPrice: existingShop?.lowestPrice ?? offer.priceToman,
+      }
+      setIsDrawerOpen(true)
+      setDrawerSnapPoint(COMPACT_DRAWER_SNAP_POINT)
+      selectShop(shop)
+    },
+    [selectShop, shopListItems]
+  )
+
   const clearSelectedShop = useCallback((shopId: string) => {
     setOpenShopPopoverId((currentShopId) =>
       currentShopId === shopId ? null : currentShopId
@@ -1335,6 +1364,7 @@ export default function MapExperience() {
       {assistantOpen && (
         <ShoppingAssistantPanel
           mapContext={assistantMapContext}
+          onSelectOffer={selectAssistantOffer}
           onClose={() => {
             setAssistantOpen(false)
             setIsDrawerOpen(true)

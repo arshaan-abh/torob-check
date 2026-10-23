@@ -12,7 +12,7 @@ import {
   products,
   shops,
 } from "@workspace/db"
-import { getMerchantUser, isMerchantAdmin } from "@/lib/merchant-session"
+import { getVerifiedUser, isSystemAdmin } from "@/lib/merchant-session"
 import {
   enforceRateLimit,
   hasTrustedOrigin,
@@ -27,10 +27,10 @@ const reviewSchema = z.object({
 })
 
 export async function GET(request: Request) {
-  const actor = await getMerchantUser(request)
-  if (!actor || !isMerchantAdmin(actor.email))
+  const actor = await getVerifiedUser(request)
+  if (!actor || !isSystemAdmin(actor.email))
     return NextResponse.json(
-      { error: "Admin access required." },
+      { error: "System administrator access required." },
       { status: 403 }
     )
   const submissions = await getDb()
@@ -60,10 +60,10 @@ export async function PATCH(request: Request) {
       { error: "Request origin is not allowed." },
       { status: 403 }
     )
-  const actor = await getMerchantUser(request)
-  if (!actor || !isMerchantAdmin(actor.email))
+  const actor = await getVerifiedUser(request)
+  if (!actor || !isSystemAdmin(actor.email))
     return NextResponse.json(
-      { error: "Admin access required." },
+      { error: "System administrator access required." },
       { status: 403 }
     )
   const rateLimit = await enforceRateLimit(request, "admin-write", 60)
@@ -114,29 +114,25 @@ export async function PATCH(request: Request) {
           linkedProductId = existing.id
         } else if (!linkedProductId) {
           linkedProductId = `merchant-${randomUUID()}`
-          await tx
-            .insert(products)
-            .values({
-              productId: linkedProductId,
-              persianTitle: submission.title,
-              brandName: submission.brandName,
-              model: submission.model,
-              categoryName: submission.categoryName,
-              specs: submission.specs,
-              imageUrls: submission.imageUrls,
-            })
+          await tx.insert(products).values({
+            productId: linkedProductId,
+            persianTitle: submission.title,
+            brandName: submission.brandName,
+            model: submission.model,
+            categoryName: submission.categoryName,
+            specs: submission.specs,
+            imageUrls: submission.imageUrls,
+          })
         }
         const offerId = `merchant-${submission.id}`
-        await tx
-          .insert(offers)
-          .values({
-            offerId,
-            productId: linkedProductId!,
-            shopId: submission.shopId,
-            sellerTitle: submission.title,
-            priceToman: submission.priceToman,
-            lastPriceChangedAt: submission.priceToman ? now : null,
-          })
+        await tx.insert(offers).values({
+          offerId,
+          productId: linkedProductId!,
+          shopId: submission.shopId,
+          sellerTitle: submission.title,
+          priceToman: submission.priceToman,
+          lastPriceChangedAt: submission.priceToman ? now : null,
+        })
         if (submission.priceToman || submission.stockStatus !== "unknown") {
           const validPriceUntil = submission.priceToman
             ? new Date(now.getTime() + 24 * 60 * 60 * 1000)
@@ -145,58 +141,51 @@ export async function PATCH(request: Request) {
             submission.stockStatus !== "unknown"
               ? new Date(now.getTime() + 30 * 60 * 1000)
               : null
-          await tx
-            .insert(offerCurrentFacts)
-            .values({
+          await tx.insert(offerCurrentFacts).values({
+            offerId,
+            priceToman: submission.priceToman,
+            stockStatus: submission.stockStatus,
+            sourceType: "merchant_portal",
+            confirmation: "merchant_confirmed",
+            actorId: submission.submittedBy,
+            priceObservedAt: submission.priceToman ? now : null,
+            priceValidUntil: validPriceUntil,
+            priceSourceType: submission.priceToman ? "merchant_portal" : null,
+            priceConfirmation: submission.priceToman
+              ? "merchant_confirmed"
+              : null,
+            stockObservedAt: submission.stockStatus !== "unknown" ? now : null,
+            stockValidUntil: validStockUntil,
+            stockSourceType:
+              submission.stockStatus !== "unknown" ? "merchant_portal" : null,
+            stockConfirmation:
+              submission.stockStatus !== "unknown"
+                ? "merchant_confirmed"
+                : null,
+          })
+          if (submission.priceToman)
+            await tx.insert(offerFactObservations).values({
               offerId,
+              factKey: "price",
               priceToman: submission.priceToman,
+              stockStatus: "unknown",
+              sourceType: "merchant_portal",
+              confirmation: "merchant_confirmed",
+              observedAt: now,
+              validUntil: validPriceUntil,
+              actorId: submission.submittedBy,
+            })
+          if (submission.stockStatus !== "unknown")
+            await tx.insert(offerFactObservations).values({
+              offerId,
+              factKey: "stock",
               stockStatus: submission.stockStatus,
               sourceType: "merchant_portal",
               confirmation: "merchant_confirmed",
+              observedAt: now,
+              validUntil: validStockUntil,
               actorId: submission.submittedBy,
-              priceObservedAt: submission.priceToman ? now : null,
-              priceValidUntil: validPriceUntil,
-              priceSourceType: submission.priceToman ? "merchant_portal" : null,
-              priceConfirmation: submission.priceToman
-                ? "merchant_confirmed"
-                : null,
-              stockObservedAt:
-                submission.stockStatus !== "unknown" ? now : null,
-              stockValidUntil: validStockUntil,
-              stockSourceType:
-                submission.stockStatus !== "unknown" ? "merchant_portal" : null,
-              stockConfirmation:
-                submission.stockStatus !== "unknown"
-                  ? "merchant_confirmed"
-                  : null,
             })
-          if (submission.priceToman)
-            await tx
-              .insert(offerFactObservations)
-              .values({
-                offerId,
-                factKey: "price",
-                priceToman: submission.priceToman,
-                stockStatus: "unknown",
-                sourceType: "merchant_portal",
-                confirmation: "merchant_confirmed",
-                observedAt: now,
-                validUntil: validPriceUntil,
-                actorId: submission.submittedBy,
-              })
-          if (submission.stockStatus !== "unknown")
-            await tx
-              .insert(offerFactObservations)
-              .values({
-                offerId,
-                factKey: "stock",
-                stockStatus: submission.stockStatus,
-                sourceType: "merchant_portal",
-                confirmation: "merchant_confirmed",
-                observedAt: now,
-                validUntil: validStockUntil,
-                actorId: submission.submittedBy,
-              })
         }
       }
       await tx
@@ -209,20 +198,18 @@ export async function PATCH(request: Request) {
           reviewNote: parsed.data.note,
         })
         .where(eq(productSubmissions.id, submission.id))
-      await tx
-        .insert(merchantAuditLogs)
-        .values({
-          actorId: actor.id,
-          shopId: submission.shopId,
-          action: `product.submission.${parsed.data.decision}`,
-          entityType: "product_submission",
-          entityId: submission.id,
-          afterValue: {
-            status: parsed.data.decision,
-            productId: linkedProductId,
-            note: parsed.data.note,
-          },
-        })
+      await tx.insert(merchantAuditLogs).values({
+        actorId: actor.id,
+        shopId: submission.shopId,
+        action: `product.submission.${parsed.data.decision}`,
+        entityType: "product_submission",
+        entityId: submission.id,
+        afterValue: {
+          status: parsed.data.decision,
+          productId: linkedProductId,
+          note: parsed.data.note,
+        },
+      })
       return true
     })
     .catch((error: unknown) =>

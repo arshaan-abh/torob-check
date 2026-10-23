@@ -14,10 +14,31 @@ export type ShoppingAssistantMapContext = {
   center?: { lat: number; lon: number }
 }
 
-type Props = { mapContext: ShoppingAssistantMapContext; onClose: () => void }
-type ToolPart = { type: string; state?: string; output?: unknown }
+export type ShoppingAssistantOfferSelection = {
+  shopId: string
+  shopName: string | null
+  address: string | null
+  locationLabel: string | null
+  categoryName: string | null
+  lat: number | null
+  lon: number | null
+  priceToman: string | null
+}
+
+type Props = {
+  mapContext: ShoppingAssistantMapContext
+  onClose: () => void
+  onSelectOffer: (offer: ShoppingAssistantOfferSelection) => void
+}
+type ToolPart = {
+  type: string
+  state?: string
+  toolCallId?: string
+  output?: unknown
+}
 type Offer = {
   offerId: string
+  shopId: string
   productTitle: string | null
   sellerTitle?: string | null
   brandName: string | null
@@ -31,6 +52,10 @@ type Offer = {
   evidenceUrl: string | null
   shopName: string | null
   address: string | null
+  locationLabel: string | null
+  categoryName: string | null
+  lat: number | null
+  lon: number | null
   distanceKm: number | null
 }
 
@@ -177,12 +202,20 @@ function ToolResult({ part }: { part: ToolPart }) {
           observedAt: string
         }>)
       : []
-    if (!findings.length) return null
+    const queued = output.status === "research_queued"
+    if (!findings.length && !queued) return null
     return (
       <div className="mt-2 grid gap-2">
-        <p className="text-xs font-semibold text-amber-800 dark:text-amber-200">
-          یافته عمومی · تأییدنشده
-        </p>
+        {queued && (
+          <p role="status" className="text-xs text-muted-foreground">
+            پژوهش منبع فروشگاه در پس‌زمینه آغاز شد؛ پاسخ فعلی منتظر آن نمی‌ماند.
+          </p>
+        )}
+        {findings.length > 0 && (
+          <p className="text-xs font-semibold text-amber-800 dark:text-amber-200">
+            یافته عمومی · تأییدنشده
+          </p>
+        )}
         {findings.map((finding) => (
           <a
             key={finding.url}
@@ -198,6 +231,16 @@ function ToolResult({ part }: { part: ToolPart }) {
             <span className="mt-1 block text-xs text-muted-foreground">
               {finding.excerpt.slice(0, 220)}
             </span>
+            <time
+              className="mt-2 block text-[11px] text-muted-foreground"
+              dateTime={finding.observedAt}
+            >
+              مشاهده‌شده:{" "}
+              {new Intl.DateTimeFormat("fa-IR", {
+                dateStyle: "medium",
+                timeStyle: "short",
+              }).format(new Date(finding.observedAt))}
+            </time>
           </a>
         ))}
       </div>
@@ -236,9 +279,14 @@ function ToolResult({ part }: { part: ToolPart }) {
   return null
 }
 
-export function ShoppingAssistantPanel({ mapContext, onClose }: Props) {
+export function ShoppingAssistantPanel({
+  mapContext,
+  onClose,
+  onSelectOffer,
+}: Props) {
   const [input, setInput] = useState("")
   const endRef = useRef<HTMLDivElement>(null)
+  const handledSearchToolsRef = useRef(new Set<string>())
   const { setSpeech } = useTorobCheck()
   const transport = useMemo(
     () =>
@@ -255,6 +303,51 @@ export function ShoppingAssistantPanel({ mapContext, onClose }: Props) {
   useEffect(() => {
     endRef.current?.scrollIntoView({ block: "end", behavior: "smooth" })
   }, [messages, status])
+  useEffect(() => {
+    for (const message of [...messages].reverse()) {
+      for (let index = message.parts.length - 1; index >= 0; index--) {
+        const part = message.parts[index] as ToolPart | undefined
+        if (
+          part?.type !== "tool-searchProducts" ||
+          part.state !== "output-available" ||
+          !part.output ||
+          typeof part.output !== "object"
+        ) {
+          continue
+        }
+
+        const eventId = part.toolCallId ?? `${message.id}:${index}`
+        if (handledSearchToolsRef.current.has(eventId)) return
+        handledSearchToolsRef.current.add(eventId)
+        if (handledSearchToolsRef.current.size > 100) {
+          const oldest = handledSearchToolsRef.current.values().next().value
+          if (oldest) handledSearchToolsRef.current.delete(oldest)
+        }
+
+        const output = part.output as { offers?: unknown }
+        if (!Array.isArray(output.offers)) return
+        const bestOffer = (output.offers as Offer[]).find(
+          (offer) =>
+            typeof offer.shopId === "string" &&
+            typeof offer.lat === "number" &&
+            typeof offer.lon === "number"
+        )
+        if (bestOffer) {
+          onSelectOffer({
+            shopId: bestOffer.shopId,
+            shopName: bestOffer.shopName,
+            address: bestOffer.address,
+            locationLabel: bestOffer.locationLabel,
+            categoryName: bestOffer.categoryName,
+            lat: bestOffer.lat,
+            lon: bestOffer.lon,
+            priceToman: bestOffer.priceToman,
+          })
+        }
+        return
+      }
+    }
+  }, [messages, onSelectOffer])
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()

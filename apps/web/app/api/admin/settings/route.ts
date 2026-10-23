@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server"
 import { appSettings, getDb, merchantAuditLogs } from "@workspace/db"
-import { getMerchantUser, isMerchantAdmin } from "@/lib/merchant-session"
+import {
+  getVerifiedUser,
+  isSystemAdmin,
+  isSystemAdminConfigured,
+} from "@/lib/merchant-session"
 import {
   encryptSetting,
   getRuntimeSettings,
@@ -63,10 +67,17 @@ function allowedProviderUrl(value: string) {
 }
 
 export async function GET(request: Request) {
-  const actor = await getMerchantUser(request)
-  if (!actor || !isMerchantAdmin(actor.email))
+  if (!isSystemAdminConfigured())
     return NextResponse.json(
-      { error: "Admin access required." },
+      { error: "Admin setup required.", setupRequired: true },
+      { status: 503 }
+    )
+  const actor = await getVerifiedUser(request)
+  if (!actor)
+    return NextResponse.json({ error: "Sign in required." }, { status: 401 })
+  if (!isSystemAdmin(actor.email))
+    return NextResponse.json(
+      { error: "System administrator access required." },
       { status: 403 }
     )
   const values = await getRuntimeSettings()
@@ -88,10 +99,17 @@ export async function PATCH(request: Request) {
       { error: "Request origin is not allowed." },
       { status: 403 }
     )
-  const actor = await getMerchantUser(request)
-  if (!actor || !isMerchantAdmin(actor.email))
+  if (!isSystemAdminConfigured())
     return NextResponse.json(
-      { error: "Admin access required." },
+      { error: "Admin setup required.", setupRequired: true },
+      { status: 503 }
+    )
+  const actor = await getVerifiedUser(request)
+  if (!actor)
+    return NextResponse.json({ error: "Sign in required." }, { status: 401 })
+  if (!isSystemAdmin(actor.email))
+    return NextResponse.json(
+      { error: "System administrator access required." },
       { status: 403 }
     )
   const rateLimit = await enforceRateLimit(request, "admin-write", 20)
@@ -189,14 +207,12 @@ export async function PATCH(request: Request) {
           })
         changed.push(key)
       }
-      await tx
-        .insert(merchantAuditLogs)
-        .values({
-          actorId: actor.id,
-          action: "admin.settings.update",
-          entityType: "app_settings",
-          afterValue: { keys: [...new Set(changed)] },
-        })
+      await tx.insert(merchantAuditLogs).values({
+        actorId: actor.id,
+        action: "admin.settings.update",
+        entityType: "app_settings",
+        afterValue: { keys: [...new Set(changed)] },
+      })
     })
   } catch (error) {
     const message =

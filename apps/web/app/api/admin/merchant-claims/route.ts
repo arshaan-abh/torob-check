@@ -8,7 +8,7 @@ import {
   shops,
   user,
 } from "@workspace/db"
-import { getMerchantUser, isMerchantAdmin } from "@/lib/merchant-session"
+import { getVerifiedUser, isSystemAdmin } from "@/lib/merchant-session"
 import {
   enforceRateLimit,
   hasTrustedOrigin,
@@ -23,10 +23,10 @@ const reviewSchema = z.object({
 })
 
 export async function GET(request: Request) {
-  const actor = await getMerchantUser(request)
-  if (!actor || !isMerchantAdmin(actor.email))
+  const actor = await getVerifiedUser(request)
+  if (!actor || !isSystemAdmin(actor.email))
     return NextResponse.json(
-      { error: "Admin access required." },
+      { error: "System administrator access required." },
       { status: 403 }
     )
   const status = new URL(request.url).searchParams.get("status") ?? "pending"
@@ -63,10 +63,10 @@ export async function PATCH(request: Request) {
       { error: "Request origin is not allowed." },
       { status: 403 }
     )
-  const actor = await getMerchantUser(request)
-  if (!actor || !isMerchantAdmin(actor.email))
+  const actor = await getVerifiedUser(request)
+  if (!actor || !isSystemAdmin(actor.email))
     return NextResponse.json(
-      { error: "Admin access required." },
+      { error: "System administrator access required." },
       { status: 403 }
     )
   const rateLimit = await enforceRateLimit(request, "admin-write", 60)
@@ -127,17 +127,15 @@ export async function PATCH(request: Request) {
           set: { role: "owner", verifiedAt: now },
         })
     }
-    await tx
-      .insert(merchantAuditLogs)
-      .values({
-        actorId: actor.id,
-        shopId: claim.shopId,
-        action: `merchant.claim.${parsed.data.decision}`,
-        entityType: "merchant_claim",
-        entityId: claim.id,
-        beforeValue: { status: "pending" },
-        afterValue: { status: parsed.data.decision, note: parsed.data.note },
-      })
+    await tx.insert(merchantAuditLogs).values({
+      actorId: actor.id,
+      shopId: claim.shopId,
+      action: `merchant.claim.${parsed.data.decision}`,
+      entityType: "merchant_claim",
+      entityId: claim.id,
+      beforeValue: { status: "pending" },
+      afterValue: { status: parsed.data.decision, note: parsed.data.note },
+    })
     return true
   })
   return result

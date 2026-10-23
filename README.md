@@ -17,13 +17,13 @@ pnpm db:import
 pnpm dev
 ```
 
-`db:import` loads the CSV files in `dataset/` into an empty local database. It is a one-time import; rerunning it will hit the existing primary keys. The map uses OpenFreeMap with MapLibre and needs no API key. Set `BETTER_AUTH_SECRET`, `MERCHANT_ADMIN_EMAILS`, `SMTP_URL`, and `SMTP_FROM` in `apps/web/.env.local`, and set the same generated `SETTINGS_ENCRYPTION_KEY` in both environment files before creating the first administrator account. After that, configure AI providers, Tavily, Instagram, and SMTP from `/admin/settings`; saved secrets are encrypted in PostgreSQL. Environment provider keys are optional fallbacks.
+`db:import` loads the CSV files in `dataset/` into an empty local database. It is a one-time import; rerunning it will hit the existing primary keys. The map uses OpenFreeMap with MapLibre and needs no API key. Set `BETTER_AUTH_SECRET`, `SYSTEM_ADMIN_EMAILS`, `SMTP_URL`, and `SMTP_FROM` in `apps/web/.env.local`, and set the same generated `SETTINGS_ENCRYPTION_KEY` in both environment files before creating the first system administrator account. `SYSTEM_ADMIN_EMAILS` controls platform-wide review and settings access; it is separate from verified shop memberships granted after claim approval. After that, configure AI providers, Tavily, Instagram, and SMTP from `/admin/settings`; saved secrets are encrypted in PostgreSQL. Environment provider keys are optional fallbacks. Existing deployments can continue using `MERCHANT_ADMIN_EMAILS` as a legacy alias until they migrate.
 
-Run the scheduled public source refresh worker separately with `pnpm worker:dev`, or start it with Docker using `docker compose --profile worker up --build`. The worker refreshes admin-approved websites through Tavily and authorized professional Instagram public media once per day. Public findings remain unverified and never update stock or price facts.
+Run the public source refresh worker separately with `pnpm worker:dev`, or start it with Docker using `docker compose --profile worker up --build`. The worker refreshes approved websites and authorized professional Instagram public media daily, and processes on-demand Tavily research jobs from the assistant. Chat receives cached findings and a queued status immediately; it does not wait for external research. Public findings remain unverified and never update stock or price facts. On-demand queue entries retain only the bounded shop question and are deleted after one hour.
 
-Shopper conversations stay in the browser session. Contact actions open a call or Instagram/WhatsApp draft for the shopper to send. Instagram API access is limited to authorized professional profiles and public media in this release; it does not automate merchant DMs.
+Shopper conversation history stays in the browser session. Contact actions open a call or Instagram/WhatsApp draft for the shopper to send. Instagram API access is limited to authorized professional profiles and public media in this release; it does not automate merchant DMs.
 
-The merchant portal at `/merchant` is optional and intended as a last resort for a shop that wants to maintain verified information directly. Merchants must verify email, and a site administrator approves shop claims and requested public sources first. Admin review queues and integrations live at `/admin/review` and `/admin/settings`.
+The merchant portal at `/merchant` is optional and intended as a last resort for a shop that wants to maintain verified information directly. Merchants must verify email, and a system administrator approves shop claims and requested public sources first. Approved shop memberships authorize merchant updates only for their own shops. System administrator review queues and integrations live at `/admin/review` and `/admin/settings`.
 
 The project MCP configuration includes the official shadcn registry server and Next.js devtools server. Restart Codex after adding MCP servers to its user configuration.
 
@@ -44,5 +44,5 @@ This will place the ui components in the `packages/ui/src/components` directory.
 To use the components in your app, import them from the `ui` package.
 
 ```tsx
-import { Button } from "@workspace/ui/components/button";
+import { Button } from "@workspace/ui/components/button"
 ```

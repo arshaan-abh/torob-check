@@ -5,12 +5,14 @@ import {
   getDb,
   researchObservations,
   shopSources,
+  shops,
 } from "@workspace/db"
 import { decryptSecret, encryptSecret } from "@workspace/db/settings-crypto"
 import { PgBoss, type Job } from "pg-boss"
 
 const DISCOVER_QUEUE = "torob-check.source-refresh-discover"
 const REFRESH_QUEUE = "torob-check.source-refresh"
+const RESEARCH_QUEUE = "torob-check.shop-research"
 const DATABASE_URL = process.env.DATABASE_URL
 if (!DATABASE_URL)
   throw new Error("DATABASE_URL is required by the refresh worker")
@@ -24,6 +26,11 @@ const MAX_INSTAGRAM_PAGES = 4
 const MAX_MEDIA_PER_SOURCE = 80
 
 type SourceJob = { sourceId: string }
+type ShopResearchJob = {
+  shopId: string
+  question: string
+  requestedAt: string
+}
 type ResearchItem = { url: string; title: string; excerpt: string }
 
 function object(value: unknown): Record<string, unknown> | null {
@@ -86,10 +93,13 @@ async function saveFindings(
   shopId: string,
   sourceId: string,
   query: string,
-  items: ResearchItem[]
+  items: ResearchItem[],
+  options: { observedAt?: Date; expiresAfterMs?: number } = {}
 ) {
-  const observedAt = stableDailyObservationTime()
-  const expiresAt = new Date(observedAt.getTime() + 36 * 60 * 60 * 1000)
+  const observedAt = options.observedAt ?? stableDailyObservationTime()
+  const expiresAt = new Date(
+    observedAt.getTime() + (options.expiresAfterMs ?? 36 * 60 * 60 * 1000)
+  )
   for (const item of items) {
     const safeUrl = publicHttpsUrl(item.url)
     if (!safeUrl) continue
@@ -126,6 +136,149 @@ async function saveFindings(
           },
         },
       })
+  }
+}
+
+async function researchShopQuestion(job: ShopResearchJob) {
+  const shopId = job.shopId.trim().slice(0, 128)
+  const question = job.question.trim().slice(0, 240)
+  const observedAt = new Date(job.requestedAt)
+  if (
+    !shopId ||
+    question.length < 2 ||
+    Number.isNaN(observedAt.getTime()) ||
+    observedAt.getTime() > Date.now() + 60_000
+  ) {
+    throw new Error("On-demand research job is invalid")
+  }
+
+  const [shop, sources] = await Promise.all([
+    db
+      .select({ name: shops.name })
+      .from(shops)
+      .where(eq(shops.shopId, shopId))
+      .limit(1),
+    db
+      .select({ sourceId: shopSources.id, url: shopSources.url })
+      .from(shopSources)
+      .where(
+        and(
+          eq(shopSources.shopId, shopId),
+          eq(shopSources.status, "active"),
+          eq(shopSources.sourceType, "website")
+        )
+      ),
+  ])
+  if (!shop[0] || sources.length === 0) return
+
+  const tavilyApiKey = await getTavilyKey()
+  if (!tavilyApiKey) throw new Error("Tavily API key is not configured")
+  const approvedSources = sources.flatMap((source) => {
+    const url = publicHttpsUrl(source.url)
+    return url
+      ? [{ ...source, url, domain: url.hostname.replace(/^www\./, "") }]
+      : []
+  })
+  const domains = [...new Set(approvedSources.map((source) => source.domain))]
+  if (domains.length === 0) return
+
+  const response = await fetch("https://api.tavily.com/search", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      api_key: tavilyApiKey,
+      query: `${shop[0].name ?? "فروشگاه"} ${question}`.slice(0, 400),
+      include_domains: domains,
+      search_depth: "basic",
+      max_results: 5,
+      include_answer: false,
+      include_raw_content: false,
+    }),
+    signal: AbortSignal.timeout(12_000),
+  })
+  if (!response.ok) throw new Error(`Tavily search failed (${response.status})`)
+
+  const searchBody = object(await response.json())
+  const searchRows = Array.isArray(searchBody?.results)
+    ? searchBody.results
+    : []
+  const results = searchRows.flatMap((value) => {
+    const row = object(value)
+    const url = typeof row?.url === "string" ? publicHttpsUrl(row.url) : null
+    const excerpt = typeof row?.content === "string" ? row.content.trim() : ""
+    if (!url || !excerpt) return []
+    const source = approvedSources.find((candidate) =>
+      hostMatches(url.toString(), candidate.domain)
+    )
+    if (!source) return []
+    return [
+      {
+        sourceId: source.sourceId,
+        url: url.toString(),
+        title:
+          typeof row?.title === "string"
+            ? row.title.slice(0, 200)
+            : "منبع عمومی فروشگاه",
+        excerpt: excerpt.slice(0, 1200),
+      },
+    ]
+  })
+  const uniqueResults = results
+    .filter(
+      (result, index, all) =>
+        all.findIndex((candidate) => candidate.url === result.url) === index
+    )
+    .slice(0, 5)
+
+  let extracted = new Map<string, string>()
+  if (uniqueResults.length) {
+    const extractResponse = await fetch("https://api.tavily.com/extract", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        api_key: tavilyApiKey,
+        urls: uniqueResults.map((result) => result.url),
+        extract_depth: "basic",
+      }),
+      signal: AbortSignal.timeout(12_000),
+    }).catch(() => null)
+    if (extractResponse?.ok) {
+      const extractBody = object(await extractResponse.json().catch(() => null))
+      const extractRows = Array.isArray(extractBody?.results)
+        ? extractBody.results
+        : []
+      for (const value of extractRows) {
+        const row = object(value)
+        if (
+          typeof row?.url === "string" &&
+          typeof row.raw_content === "string"
+        ) {
+          const safeUrl = publicHttpsUrl(row.url)
+          if (
+            safeUrl &&
+            uniqueResults.some((result) => result.url === safeUrl.toString())
+          ) {
+            extracted.set(safeUrl.toString(), row.raw_content.slice(0, 1600))
+          }
+        }
+      }
+    }
+  }
+
+  for (const result of uniqueResults) {
+    await saveFindings(
+      shopId,
+      result.sourceId,
+      "on-demand approved-source lookup",
+      [
+        {
+          url: result.url,
+          title: result.title,
+          excerpt: (extracted.get(result.url) || result.excerpt).slice(0, 1000),
+        },
+      ],
+      { observedAt, expiresAfterMs: 24 * 60 * 60 * 1000 }
+    )
   }
 }
 
@@ -375,6 +528,14 @@ async function main() {
     retryDelay: 30,
     retryBackoff: true,
   })
+  await boss.createQueue(RESEARCH_QUEUE, {
+    expireInSeconds: 120,
+    retryLimit: 4,
+    retryDelay: 20,
+    retryBackoff: true,
+    retentionSeconds: 60 * 60,
+    deleteAfterSeconds: 60 * 60,
+  })
   await boss.work(DISCOVER_QUEUE, { localConcurrency: 1 }, async () =>
     enqueueActiveSources()
   )
@@ -384,6 +545,14 @@ async function main() {
     async (jobs: Job<SourceJob>[]) => {
       const job = jobs[0]
       if (job) await refreshSource(job.data.sourceId)
+    }
+  )
+  await boss.work<ShopResearchJob>(
+    RESEARCH_QUEUE,
+    { localConcurrency: 2 },
+    async (jobs: Job<ShopResearchJob>[]) => {
+      const job = jobs[0]
+      if (job) await researchShopQuestion(job.data)
     }
   )
   await boss.schedule(
