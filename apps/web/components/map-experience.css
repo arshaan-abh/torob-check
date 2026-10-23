@@ -24,3 +24,7 @@
 .torob-map-drawer > [data-slot="drawer-content"] {
   max-height: var(--torob-drawer-visible-content-height);
 }
+
+.torob-map-drawer [data-slot="scroll-area-viewport"] {
+  overscroll-behavior: contain;
+}

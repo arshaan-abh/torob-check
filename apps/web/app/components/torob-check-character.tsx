@@ -14,6 +14,7 @@ import RiveCanvas, {
   type RiveCanvas as RiveRuntime,
   type WrappedRenderer,
 } from "@rive-app/canvas-advanced"
+import { CircleAlert, LoaderCircle } from "lucide-react"
 
 import {
   type TorobCheckState,
@@ -372,6 +373,7 @@ export function TorobCheckCharacter({
 
   return (
     <figure
+      aria-busy={loadState === "loading"}
       className={`pointer-events-none flex flex-col items-center gap-0.5 ${className ?? ""}`}
       style={style}
     >
@@ -379,33 +381,35 @@ export function TorobCheckCharacter({
         <canvas
           ref={canvasRef}
           aria-label={label}
+          aria-hidden={loadState !== "ready"}
           role="img"
-          className="block size-full"
+          className={`block size-full transition-opacity duration-200 ${loadState === "ready" ? "opacity-100" : "opacity-0"}`}
         />
         {loadState === "loading" && (
-          <span
+          <div
             role="status"
-            className="absolute inset-x-1 bottom-1 rounded-full bg-background/90 px-2 py-1 text-center text-[10px] text-muted-foreground shadow-sm"
+            aria-live="polite"
+            aria-label="تربچِک در حال بارگذاری است"
+            className="absolute inset-0 grid place-items-center rounded-full border border-border/70 bg-card/95 shadow-lg shadow-black/10 backdrop-blur-xl"
           >
-            تربچِک آماده می‌شود…
-          </span>
+            <LoaderCircle
+              aria-hidden="true"
+              className="size-7 text-primary motion-safe:animate-spin"
+            />
+          </div>
         )}
         {loadState === "error" && (
           <span
-            role="status"
-            className="absolute inset-x-1 bottom-1 rounded-full bg-background/95 px-2 py-1 text-center text-[10px] text-destructive shadow-sm"
+            role="alert"
+            className="absolute inset-x-[-12px] bottom-0 flex items-center justify-center gap-1 rounded-full border border-destructive/20 bg-card/95 px-2 py-1 text-center text-[10px] leading-4 text-destructive shadow-lg backdrop-blur-md"
           >
+            <CircleAlert aria-hidden="true" className="size-3 shrink-0" />
             تربچِک بارگذاری نشد
           </span>
         )}
       </div>
-      <figcaption className="text-[10px] leading-4 text-muted-foreground">
-        <a
-          className="pointer-events-auto invisible underline decoration-muted-foreground/50 underline-offset-2 hover:text-foreground"
-          href="https://openrive.upstand.dev"
-          target="_blank"
-          rel="noreferrer"
-        >
+      <figcaption dir="ltr" className="invisible">
+        <a href="https://openrive.upstand.dev" target="_blank" rel="noreferrer">
           Made with OpenRive
         </a>
       </figcaption>

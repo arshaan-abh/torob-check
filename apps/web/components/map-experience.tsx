@@ -17,6 +17,7 @@ import { Badge } from "@workspace/ui/components/badge"
 import { Field, FieldGroup, FieldLabel } from "@workspace/ui/components/field"
 import { Input } from "@workspace/ui/components/input"
 import { Button } from "@workspace/ui/components/button"
+import { ScrollArea } from "@workspace/ui/components/scroll-area"
 import {
   Drawer,
   DrawerContent,
@@ -126,6 +127,15 @@ export default function MapExperience() {
   const [drawerSnapPoint, setDrawerSnapPoint] = useState<
     number | string | null
   >(DEFAULT_DRAWER_SNAP_POINT)
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false)
+
+  useEffect(() => {
+    const animationFrame = window.requestAnimationFrame(() => {
+      setIsDrawerOpen(true)
+    })
+
+    return () => window.cancelAnimationFrame(animationFrame)
+  }, [])
 
   const selectedShop = shops.find((shop) => shop.shopId === selectedShopId)
   const nearestShops = useMemo(() => {
@@ -590,12 +600,12 @@ export default function MapExperience() {
     <main className="relative h-dvh min-h-[540px] w-full overflow-hidden bg-background text-foreground">
       <div
         ref={mapContainerRef}
-        className="torob-map absolute inset-0"
+        className="torob-map absolute inset-0 bg-map-background"
         data-drawer-snap={isCompactDrawer ? "peek" : "default"}
         aria-label="نقشه فروشگاه‌های تهران"
       />
 
-      <div
+      {/* <div
         aria-label="منابع نقشه"
         dir="ltr"
         data-drawer-snap={isCompactDrawer ? "peek" : "default"}
@@ -618,7 +628,7 @@ export default function MapExperience() {
         >
           © OpenMapTiles
         </a>
-      </div>
+      </div> */}
 
       <TorobCheckCharacter className="absolute top-28 left-[18%] z-10 md:top-[18%] md:left-[25%]" />
 
@@ -660,7 +670,7 @@ export default function MapExperience() {
       </div>
 
       <Drawer
-        defaultOpen
+        open={isDrawerOpen}
         snapPoints={DRAWER_SNAP_POINTS}
         snapPoint={drawerSnapPoint}
         onSnapPointChange={setDrawerSnapPoint}
@@ -675,7 +685,7 @@ export default function MapExperience() {
       >
         <DrawerVirtualKeyboardProvider>
           <DrawerContent
-            className="torob-map-drawer max-h-none rounded-t-3xl border-border/70 bg-card/95 shadow-2xl shadow-black/20 backdrop-blur-xl"
+            className="torob-map-drawer max-h-none rounded-t-3xl border-border/70 bg-card/95 shadow-2xl shadow-black/20 backdrop-blur-xl **:data-[slot=drawer-content]:overflow-visible"
             initialFocus={false}
           >
             <DrawerHeader className="gap-0 px-4 pt-1 pb-3 text-right sm:px-6">
@@ -689,10 +699,28 @@ export default function MapExperience() {
                       فروشگاه‌های این محدوده
                     </DrawerTitle>
                     <p className="mt-1 truncate text-xs text-muted-foreground">
-                      تربِ حضوری · {shopCountLabel}
+                      تربِ حضوری / {shopCountLabel}
                     </p>
                   </div>
                 </div>
+
+                <Badge
+                  variant="outline"
+                  className="ms-auto gap-1.5 font-normal"
+                >
+                  <span
+                    className={cn(
+                      "size-1.5 rounded-full",
+                      mapStatus === "ready"
+                        ? "bg-primary"
+                        : mapStatus === "error"
+                          ? "bg-destructive"
+                          : "animate-pulse bg-muted-foreground"
+                    )}
+                  />
+                  {mapStatusLabel}
+                </Badge>
+
                 <Button
                   type="button"
                   variant="ghost"
@@ -709,10 +737,10 @@ export default function MapExperience() {
                   )}
                 </Button>
               </div>
-              <DrawerDescription className="mt-2 text-right text-xs">
+              <DrawerDescription className="mt-1 text-right text-xs">
                 {isCompactDrawer
                   ? "برای جستجو و دیدن فروشگاه‌ها، به بالا بکشید"
-                  : "برای تغییر اندازه، دسته را به بالا یا پایین بکشید"}
+                  : "برای کوچک‌کردن فهرست، دسته را به پایین بکشید"}
               </DrawerDescription>
             </DrawerHeader>
 
@@ -720,7 +748,7 @@ export default function MapExperience() {
               <form
                 role="search"
                 onSubmit={handleSearch}
-                className="shrink-0 px-4 pt-1 pb-3 sm:px-6"
+                className="shrink-0 px-4 pt-1 sm:px-6"
               >
                 <FieldGroup className="gap-0">
                   <Field>
@@ -736,7 +764,7 @@ export default function MapExperience() {
                         placeholder="نام فروشگاه، کالا یا محله"
                         autoComplete="off"
                         inputMode="search"
-                        className="h-11 min-w-0 rounded-xl bg-background text-sm"
+                        className="relative h-11 min-w-0 rounded-xl bg-background text-sm"
                       />
                       {query && (
                         <Button
@@ -745,7 +773,7 @@ export default function MapExperience() {
                           size="icon-lg"
                           aria-label="پاک کردن جستجو"
                           onClick={clearSearch}
-                          className="shrink-0 rounded-xl"
+                          className="size-11 shrink-0 rounded-full"
                         >
                           <X aria-hidden="true" />
                         </Button>
@@ -755,7 +783,7 @@ export default function MapExperience() {
                         size="icon-lg"
                         aria-label="جستجوی فروشگاه‌ها"
                         disabled={isSearching}
-                        className="shrink-0 rounded-xl"
+                        className="size-11 shrink-0 rounded-full"
                       >
                         <Search aria-hidden="true" />
                       </Button>
@@ -763,27 +791,6 @@ export default function MapExperience() {
                   </Field>
                 </FieldGroup>
               </form>
-
-              <div className="flex shrink-0 items-center justify-between gap-3 px-4 pb-2 sm:px-6">
-                <Badge variant="outline" className="gap-1.5 font-normal">
-                  <span
-                    className={cn(
-                      "size-1.5 rounded-full",
-                      mapStatus === "ready"
-                        ? "bg-primary"
-                        : mapStatus === "error"
-                          ? "bg-destructive"
-                          : "animate-pulse bg-muted-foreground"
-                    )}
-                  />
-                  {mapStatusLabel}
-                </Badge>
-                <span className="text-xs text-muted-foreground">
-                  {shopsStatus === "loading" && shops.length === 0
-                    ? "در حال بارگذاری فروشگاه‌ها…"
-                    : shopCountLabel}
-                </span>
-              </div>
 
               {(searchError || locationError || mapStatus === "error") && (
                 <div className="flex shrink-0 flex-col gap-2 px-4 pb-2 sm:px-6">
@@ -815,7 +822,7 @@ export default function MapExperience() {
                 </div>
               )}
 
-              <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 pb-4 sm:px-4">
+              <ScrollArea className="min-h-0 flex-1 px-2 **:data-[slot=scroll-area-viewport]:py-4 sm:px-4">
                 {shopsStatus === "error" ? (
                   <div className="rounded-2xl bg-muted/70 px-4 py-5 text-center text-sm leading-6 text-muted-foreground">
                     اطلاعات فروشگاه‌ها بارگذاری نشد. مطمئن شوید دیتابیس آماده و
@@ -884,7 +891,7 @@ export default function MapExperience() {
                     })}
                   </div>
                 )}
-              </div>
+              </ScrollArea>
 
               {selectedShop && (
                 <div className="shrink-0 border-t border-border/70 bg-muted/30 px-4 py-3 sm:px-6">
