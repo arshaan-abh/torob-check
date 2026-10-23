@@ -15,8 +15,10 @@ export type RuntimeSettings = {
   instagramAppId: string
   instagramAppSecret: string
   instagramApiVersion: string
+  emailProvider: "smtp" | "resend"
   smtpUrl: string
   smtpFrom: string
+  resendApiKey: string
 }
 
 type SettingKey = keyof RuntimeSettings
@@ -29,6 +31,7 @@ const SECRET_KEYS = new Set<SettingKey>([
   "tavilyApiKey",
   "instagramAppSecret",
   "smtpUrl",
+  "resendApiKey",
 ])
 
 const ENV_KEYS: Record<SettingKey, string> = {
@@ -44,8 +47,10 @@ const ENV_KEYS: Record<SettingKey, string> = {
   instagramAppId: "INSTAGRAM_APP_ID",
   instagramAppSecret: "INSTAGRAM_APP_SECRET",
   instagramApiVersion: "INSTAGRAM_API_VERSION",
+  emailProvider: "EMAIL_PROVIDER",
   smtpUrl: "SMTP_URL",
   smtpFrom: "SMTP_FROM",
+  resendApiKey: "RESEND_API_KEY",
 }
 
 let cache: { expiresAt: number; settings: RuntimeSettings } | undefined
@@ -72,8 +77,10 @@ export function runtimeSettingsFromEnvironment(): RuntimeSettings {
     instagramAppId: process.env.INSTAGRAM_APP_ID ?? "",
     instagramAppSecret: process.env.INSTAGRAM_APP_SECRET ?? "",
     instagramApiVersion: process.env.INSTAGRAM_API_VERSION ?? "v26.0",
+    emailProvider: process.env.EMAIL_PROVIDER === "resend" ? "resend" : "smtp",
     smtpUrl: process.env.SMTP_URL ?? "",
     smtpFrom: process.env.SMTP_FROM ?? "",
+    resendApiKey: process.env.RESEND_API_KEY ?? "",
   }
 }
 

@@ -40,10 +40,12 @@ export default function AdminSetupPage() {
               <code dir="ltr">apps/web/.env.local</code> قرار می‌گیرد.
             </li>
             <li>
-              مطمئن شوید <code dir="ltr">BETTER_AUTH_SECRET</code>، تنظیمات
-              ارسال ایمیل <code dir="ltr">SMTP_URL</code> و{" "}
-              <code dir="ltr">SMTP_FROM</code> و کلید مشترک{" "}
-              <code dir="ltr">SETTINGS_ENCRYPTION_KEY</code> تنظیم شده‌اند، سپس
+              مطمئن شوید <code dir="ltr">BETTER_AUTH_SECRET</code>،{" "}
+              <code dir="ltr">SMTP_FROM</code>، روش ارسال ایمیل در{" "}
+              <code dir="ltr">EMAIL_PROVIDER</code> و اعتبار همان روش تنظیم شده
+              است (<code dir="ltr">SMTP_URL</code> برای SMTP یا{" "}
+              <code dir="ltr">RESEND_API_KEY</code> برای Resend)، همچنین کلید{" "}
+              <code dir="ltr">SETTINGS_ENCRYPTION_KEY</code> را تنظیم کنید؛ سپس
               برنامه را راه‌اندازی مجدد کنید.
             </li>
             <li>

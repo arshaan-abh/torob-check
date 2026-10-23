@@ -30,6 +30,7 @@ const secretKeys = [
   "tavilyApiKey",
   "instagramAppSecret",
   "smtpUrl",
+  "resendApiKey",
 ] as const
 const valuesSchema = z.object({
   aiProvider: z
@@ -49,8 +50,10 @@ const valuesSchema = z.object({
     .string()
     .regex(/^v\d{1,2}\.\d{1,2}$/)
     .optional(),
+  emailProvider: z.enum(["smtp", "resend"]).optional(),
   smtpUrl: z.string().max(4096).optional(),
   smtpFrom: z.string().trim().max(254).optional(),
+  resendApiKey: z.string().max(4096).optional(),
 })
 const bodySchema = z.object({
   values: valuesSchema,

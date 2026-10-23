@@ -27,10 +27,12 @@ import {
 } from "@workspace/ui/components/select"
 
 type AiProvider = "gateway" | "google" | "openrouter" | "openai-compatible"
+type EmailProvider = "smtp" | "resend"
 type AccessState = "checking" | "authorized" | "forbidden" | "error"
 
 type SettingValues = {
   aiProvider: AiProvider
+  emailProvider: EmailProvider
   aiModel: string
   openrouterBaseUrl: string
   compatibleBaseUrl: string
@@ -49,6 +51,13 @@ const AI_PROVIDER_OPTIONS: Array<{ value: AiProvider; label: string }> = [
 const AI_PROVIDER_LABELS = Object.fromEntries(
   AI_PROVIDER_OPTIONS.map(({ value, label }) => [value, label])
 ) as Record<AiProvider, string>
+const EMAIL_PROVIDER_OPTIONS: Array<{ value: EmailProvider; label: string }> = [
+  { value: "smtp", label: "SMTP" },
+  { value: "resend", label: "Resend" },
+]
+const EMAIL_PROVIDER_LABELS = Object.fromEntries(
+  EMAIL_PROVIDER_OPTIONS.map(({ value, label }) => [value, label])
+) as Record<EmailProvider, string>
 
 const LABELS: Record<string, string> = {
   aiGatewayApiKey: "AI Gateway key",
@@ -58,6 +67,7 @@ const LABELS: Record<string, string> = {
   tavilyApiKey: "Tavily API key",
   instagramAppSecret: "Instagram app secret",
   smtpUrl: "SMTP connection URL",
+  resendApiKey: "Resend API key",
 }
 
 function isAiProvider(value: unknown): value is AiProvider {
@@ -68,6 +78,7 @@ export function AdminSettingsForm() {
   const router = useRouter()
   const [values, setValues] = useState<SettingValues>({
     aiProvider: "gateway",
+    emailProvider: "smtp",
     aiModel: "",
     openrouterBaseUrl: "https://openrouter.ai/api/v1",
     compatibleBaseUrl: "",
@@ -129,6 +140,7 @@ export function AdminSettingsForm() {
       const data = body.settings as Record<string, unknown>
       setValues({
         aiProvider: isAiProvider(data.aiProvider) ? data.aiProvider : "gateway",
+        emailProvider: data.emailProvider === "resend" ? "resend" : "smtp",
         aiModel: String(data.aiModel ?? ""),
         openrouterBaseUrl: String(
           data.openrouterBaseUrl ?? "https://openrouter.ai/api/v1"
@@ -445,11 +457,59 @@ export function AdminSettingsForm() {
             <CardHeader>
               <CardTitle>ایمیل حساب فروشنده</CardTitle>
               <CardDescription>
-                برای تأیید ایمیل و بازیابی گذرواژه استفاده می‌شود.
+                برای تأیید ایمیل و بازیابی گذرواژه استفاده می‌شود. بین SMTP و
+                Resend جابه‌جا شوید؛ کلیدهای هر دو روش جداگانه و رمزگذاری‌شده
+                ذخیره می‌شوند.
               </CardDescription>
             </CardHeader>
             <CardContent className="grid gap-4 sm:grid-cols-2">
-              {secretField("smtpUrl")}
+              <div className="grid gap-2 text-sm font-medium">
+                <span id="email-provider-label">روش ارسال ایمیل</span>
+                <Select
+                  items={EMAIL_PROVIDER_OPTIONS}
+                  value={values.emailProvider}
+                  onValueChange={(value) => {
+                    if (value === "smtp" || value === "resend")
+                      setValues((current) => ({
+                        ...current,
+                        emailProvider: value,
+                      }))
+                  }}
+                >
+                  <SelectTrigger
+                    aria-labelledby="email-provider-label"
+                    className="h-10 w-full bg-background"
+                  >
+                    <SelectValue>
+                      {(value: string | null) =>
+                        value === "smtp" || value === "resend"
+                          ? EMAIL_PROVIDER_LABELS[value]
+                          : "انتخاب روش ارسال"
+                      }
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      {EMAIL_PROVIDER_OPTIONS.map((provider) => (
+                        <SelectItem key={provider.value} value={provider.value}>
+                          {provider.label}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+              </div>
+              {values.emailProvider === "smtp" ? (
+                secretField("smtpUrl")
+              ) : (
+                <div className="grid gap-2">
+                  {secretField("resendApiKey")}
+                  <p className="text-xs leading-5 text-muted-foreground">
+                    آدرس فرستنده باید از دامنه‌ای باشد که در Resend تأیید
+                    کرده‌اید.
+                  </p>
+                </div>
+              )}
               {field("smtpFrom", "نشانی فرستنده", "no-reply@example.com")}
             </CardContent>
           </Card>
