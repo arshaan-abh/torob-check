@@ -31,7 +31,12 @@ import {
   CardTitle,
 } from "@workspace/ui/components/card"
 import { Field, FieldGroup, FieldLabel } from "@workspace/ui/components/field"
-import { Input } from "@workspace/ui/components/input"
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupButton,
+  InputGroupInput,
+} from "@workspace/ui/components/input-group"
 import { Button } from "@workspace/ui/components/button"
 import {
   Popover,
@@ -41,6 +46,11 @@ import {
 import { ScrollArea } from "@workspace/ui/components/scroll-area"
 import { Skeleton } from "@workspace/ui/components/skeleton"
 import { Separator } from "@workspace/ui/components/separator"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@workspace/ui/components/tooltip"
 import {
   Drawer,
   DrawerContent,
@@ -303,7 +313,12 @@ export default function MapExperience() {
   const mapRef = useRef<MapLibreMap | null>(null)
   const requestRef = useRef<AbortController | null>(null)
   const activeSearchRef = useRef("")
+  const activeSearchWithinMapRef = useRef(false)
   const selectedShopIdRef = useRef<string | null>(null)
+  const suppressShopSelectionMoveEndsUntilRef = useRef(0)
+  const activeShopRequestKeyRef = useRef<string | null>(null)
+  const lastSuccessfulShopRequestKeyRef = useRef<string | null>(null)
+  const hasLoadedShopsRef = useRef(false)
   const shopsRef = useRef<Shop[]>([])
   const hasUserLocationRef = useRef(false)
   const locationPermissionDeniedRef = useRef(false)
@@ -325,6 +340,7 @@ export default function MapExperience() {
     null
   )
   const [query, setQuery] = useState("")
+  const [searchWithinMap, setSearchWithinMap] = useState(false)
   const [isSearching, setIsSearching] = useState(false)
   const [searchError, setSearchError] = useState<string | null>(null)
   const [locationError, setLocationError] = useState<string | null>(null)
@@ -361,67 +377,116 @@ export default function MapExperience() {
     })
   }, [mapCenter, shops])
 
-  const loadShops = useCallback(async (map: MapLibreMap, searchTerm = "") => {
-    requestRef.current?.abort()
+  const loadShops = useCallback(
+    async (
+      map: MapLibreMap,
+      searchTerm = "",
+      withinMap = false,
+      preserveListState = true
+    ) => {
+      const searchParams = new URLSearchParams()
 
-    const controller = new AbortController()
-    requestRef.current = controller
-    setShopsStatus("loading")
-    setVisibleShopCount(SHOP_LIST_PAGE_SIZE)
-    setIsLoadingMoreShops(false)
-    setSearchError(null)
+      if (searchTerm) searchParams.set("q", searchTerm)
 
-    const searchParams = new URLSearchParams()
-
-    if (searchTerm) {
-      searchParams.set("q", searchTerm)
-    } else {
-      const bounds = map.getBounds()
-      searchParams.set("west", String(bounds.getWest()))
-      searchParams.set("south", String(bounds.getSouth()))
-      searchParams.set("east", String(bounds.getEast()))
-      searchParams.set("north", String(bounds.getNorth()))
-    }
-
-    try {
-      const response = await fetch(`/api/shops?${searchParams}`, {
-        cache: "no-store",
-        signal: controller.signal,
-      })
-      const result = (await response.json()) as ShopResponse
-
-      if (!response.ok) {
-        throw new Error(result.error ?? "Shop data could not be loaded.")
+      if (!searchTerm || withinMap) {
+        const bounds = map.getBounds()
+        searchParams.set("west", String(bounds.getWest()))
+        searchParams.set("south", String(bounds.getSouth()))
+        searchParams.set("east", String(bounds.getEast()))
+        searchParams.set("north", String(bounds.getNorth()))
       }
 
-      if (controller.signal.aborted) return null
+      const requestKey = searchParams.toString()
 
-      setShops(result.shops)
-      setTotalShops(result.total)
-      setShopsTruncated(result.truncated)
-      setShopsStatus("ready")
+      if (
+        preserveListState &&
+        (lastSuccessfulShopRequestKeyRef.current === requestKey ||
+          (requestRef.current &&
+            !requestRef.current.signal.aborted &&
+            activeShopRequestKeyRef.current === requestKey))
+      ) {
+        return null
+      }
 
-      const source = map.getSource(SHOP_SOURCE_ID) as GeoJSONSource | undefined
-      source?.setData(makeShopFeatures(result.shops))
+      requestRef.current?.abort()
 
-      return result
-    } catch {
-      if (controller.signal.aborted) return null
+      const controller = new AbortController()
+      requestRef.current = controller
+      activeShopRequestKeyRef.current = requestKey
+      const keepCurrentList = preserveListState && hasLoadedShopsRef.current
 
-      setShops([])
-      setTotalShops(0)
-      setShopsTruncated(false)
-      setShopsStatus("error")
-      setSearchError(
-        "اطلاعات فروشگاه‌ها در دسترس نیست. اتصال دیتابیس را بررسی کنید."
-      )
+      if (keepCurrentList) {
+        setShopsStatus("ready")
+      } else {
+        setShopsStatus("loading")
+        setVisibleShopCount(SHOP_LIST_PAGE_SIZE)
+        setIsLoadingMoreShops(false)
+      }
 
-      const source = map.getSource(SHOP_SOURCE_ID) as GeoJSONSource | undefined
-      source?.setData(emptyFeatureCollection())
+      setSearchError(null)
 
-      return null
-    }
-  }, [])
+      try {
+        const response = await fetch(`/api/shops?${searchParams}`, {
+          cache: "no-store",
+          signal: controller.signal,
+        })
+        const result = (await response.json()) as ShopResponse
+
+        if (!response.ok) {
+          throw new Error(result.error ?? "Shop data could not be loaded.")
+        }
+
+        if (controller.signal.aborted) return null
+
+        lastSuccessfulShopRequestKeyRef.current = requestKey
+        if (requestRef.current === controller) {
+          requestRef.current = null
+          activeShopRequestKeyRef.current = null
+        }
+        hasLoadedShopsRef.current = true
+        setShops(result.shops)
+        setTotalShops(result.total)
+        setShopsTruncated(result.truncated)
+        setShopsStatus("ready")
+
+        const source = map.getSource(SHOP_SOURCE_ID) as
+          GeoJSONSource | undefined
+        source?.setData(makeShopFeatures(result.shops))
+
+        return result
+      } catch {
+        if (controller.signal.aborted) return null
+
+        if (requestRef.current === controller) {
+          requestRef.current = null
+          activeShopRequestKeyRef.current = null
+        }
+
+        if (keepCurrentList) {
+          setSearchError(
+            "به‌روزرسانی فروشگاه‌ها انجام نشد. اطلاعات قبلی همچنان نمایش داده می‌شود."
+          )
+          return null
+        }
+
+        hasLoadedShopsRef.current = false
+        setShops([])
+        setTotalShops(0)
+        setShopsTruncated(false)
+        setShopsStatus("error")
+        setSearchError(
+          "اطلاعات فروشگاه‌ها در دسترس نیست. اتصال دیتابیس را بررسی کنید."
+        )
+
+        const source = map.getSource(SHOP_SOURCE_ID) as
+          GeoJSONSource | undefined
+        source?.setData(emptyFeatureCollection())
+
+        return null
+      }
+    },
+    []
+  )
 
   const loadMoreShops = useCallback(() => {
     if (isLoadingMoreShops || visibleShopCount >= nearestShops.length) return
@@ -448,9 +513,22 @@ export default function MapExperience() {
     setSelectedShopId(shop.shopId)
     setOpenShopPopoverId(shop.shopId)
     setDrawerSnapPoint(COMPACT_DRAWER_SNAP_POINT)
-    map?.flyTo({
+
+    if (!map) return
+
+    const targetZoom = Math.max(map.getZoom(), SELECTED_SHOP_ZOOM)
+    const currentCenter = map.getCenter()
+    const needsCameraMove =
+      Math.abs(currentCenter.lng - shop.lon) > 0.000001 ||
+      Math.abs(currentCenter.lat - shop.lat) > 0.000001 ||
+      Math.abs(map.getZoom() - targetZoom) > 0.001
+
+    if (!needsCameraMove) return
+
+    suppressShopSelectionMoveEndsUntilRef.current = Date.now() + 1200
+    map.flyTo({
       center: [shop.lon, shop.lat],
-      zoom: Math.max(map?.getZoom() ?? SELECTED_SHOP_ZOOM, SELECTED_SHOP_ZOOM),
+      zoom: targetZoom,
       duration: 700,
     })
   }, [])
@@ -654,12 +732,24 @@ export default function MapExperience() {
           })
 
           activeMap.on("moveend", () => {
+            if (Date.now() < suppressShopSelectionMoveEndsUntilRef.current)
+              return
+
             if (activeMap) {
               const center = activeMap.getCenter()
               setMapCenter([center.lng, center.lat])
             }
 
-            if (!activeSearchRef.current) void loadShops(activeMap!)
+            if (activeSearchWithinMapRef.current && activeSearchRef.current) {
+              void loadShops(
+                activeMap!,
+                activeSearchRef.current,
+                activeSearchWithinMapRef.current,
+                true
+              )
+            } else if (!activeSearchRef.current) {
+              void loadShops(activeMap!, "", false, true)
+            }
           })
 
           setMapStatus("ready")
@@ -746,29 +836,22 @@ export default function MapExperience() {
     selectedShopIdRef.current = selectedShopId
   }, [selectedShopId, shops])
 
-  const handleSearch = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-
-    const searchTerm = query.trim()
+  const searchShops = async (searchTerm: string, withinMap: boolean) => {
     const map = mapRef.current
 
     if (!map) return
 
-    if (searchTerm.length === 1) {
-      setSearchError("برای جستجو، دست‌کم دو حرف وارد کنید.")
-      return
-    }
-
     activeSearchRef.current = searchTerm
+    activeSearchWithinMapRef.current = Boolean(searchTerm && withinMap)
     setSelectedShopId(null)
     setOpenShopPopoverId(null)
     setIsSearching(true)
     setDrawerSnapPoint(DEFAULT_DRAWER_SNAP_POINT)
 
-    const result = await loadShops(map, searchTerm)
+    const result = await loadShops(map, searchTerm, withinMap, false)
     setIsSearching(false)
 
-    if (!result || !searchTerm || result.shops.length === 0) return
+    if (!result || !searchTerm || withinMap || result.shops.length === 0) return
 
     if (result.shops.length === 1) {
       const shop = result.shops[0]
@@ -810,14 +893,39 @@ export default function MapExperience() {
     )
   }
 
+  const handleSearch = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+
+    const searchTerm = query.trim()
+
+    if (searchTerm.length === 1) {
+      setSearchError("برای جستجو، دست‌کم دو حرف وارد کنید.")
+      return
+    }
+
+    await searchShops(searchTerm, searchWithinMap)
+  }
+
+  const toggleSearchScope = () => {
+    const nextSearchWithinMap = !searchWithinMap
+    setSearchWithinMap(nextSearchWithinMap)
+
+    const activeSearch = activeSearchRef.current
+
+    if (activeSearch && activeSearch === query.trim()) {
+      void searchShops(activeSearch, nextSearchWithinMap)
+    }
+  }
+
   const clearSearch = () => {
     setQuery("")
     setSelectedShopId(null)
     setOpenShopPopoverId(null)
     activeSearchRef.current = ""
+    activeSearchWithinMapRef.current = false
 
     const map = mapRef.current
-    if (map) void loadShops(map)
+    if (map) void loadShops(map, "", false, false)
   }
 
   const requestUserLocation = () => {
@@ -1077,16 +1185,51 @@ export default function MapExperience() {
                       جستجوی فروشگاه یا محله
                     </FieldLabel>
                     <div className="flex items-center gap-2">
-                      <Input
-                        id="shop-search"
-                        type="text"
-                        value={query}
-                        onChange={(event) => setQuery(event.target.value)}
-                        placeholder="نام فروشگاه، کالا یا محله"
-                        autoComplete="off"
-                        inputMode="search"
-                        className="relative z-10 h-11 min-w-0 rounded-full bg-background text-sm"
-                      />
+                      <InputGroup className="h-11 rounded-full bg-background">
+                        <InputGroupInput
+                          id="shop-search"
+                          type="text"
+                          value={query}
+                          onChange={(event) => setQuery(event.target.value)}
+                          placeholder="نام فروشگاه، کالا یا محله"
+                          autoComplete="off"
+                          inputMode="search"
+                          className="h-11 px-4 text-sm"
+                        />
+                        <InputGroupAddon align="inline-end" className="pe-1">
+                          <Tooltip>
+                            <TooltipTrigger
+                              render={
+                                <InputGroupButton
+                                  aria-label="جستجو در محدودهٔ نقشه"
+                                  aria-pressed={searchWithinMap}
+                                  className={cn(
+                                    "me-1.5 rounded-full",
+                                    searchWithinMap &&
+                                      "bg-chart-3 hover:bg-chart-4"
+                                  )}
+                                  onClick={toggleSearchScope}
+                                  size="icon-sm"
+                                  type="button"
+                                  variant={
+                                    searchWithinMap ? "default" : "ghost"
+                                  }
+                                >
+                                  <MapPin aria-hidden="true" />
+                                </InputGroupButton>
+                              }
+                            />
+                            <TooltipContent
+                              dir="rtl"
+                              className="max-w-60 text-center leading-5"
+                            >
+                              {searchWithinMap
+                                ? "جستجو فقط در محدودهٔ قابل‌مشاهدهٔ نقشه"
+                                : "برای محدودکردن نتایج به محدودهٔ قابل‌مشاهدهٔ نقشه، فعال کنید"}
+                            </TooltipContent>
+                          </Tooltip>
+                        </InputGroupAddon>
+                      </InputGroup>
                       {query && (
                         <Button
                           type="button"

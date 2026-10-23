@@ -9,7 +9,10 @@ const DEFAULT_BOUNDS: MapShopBounds = {
   north: 35.85,
 }
 
-function readBounds(searchParams: URLSearchParams): MapShopBounds | null {
+function readBounds(
+  searchParams: URLSearchParams,
+  useDefaultBounds: boolean
+): MapShopBounds | null {
   const values = [
     searchParams.get("west"),
     searchParams.get("south"),
@@ -18,7 +21,7 @@ function readBounds(searchParams: URLSearchParams): MapShopBounds | null {
   ]
   const hasBounds = values.some((value) => value !== null)
 
-  if (!hasBounds) return DEFAULT_BOUNDS
+  if (!hasBounds) return useDefaultBounds ? DEFAULT_BOUNDS : null
   if (values.some((value) => value === null)) return null
 
   const [westValue, southValue, eastValue, northValue] = values
@@ -74,9 +77,12 @@ export async function GET(request: Request) {
     )
   }
 
-  const bounds = readBounds(searchParams)
+  const hasExplicitBounds = ["west", "south", "east", "north"].some((key) =>
+    searchParams.has(key)
+  )
+  const bounds = readBounds(searchParams, !searchTerm)
 
-  if (!searchTerm && !bounds) {
+  if ((!searchTerm && !bounds) || (hasExplicitBounds && !bounds)) {
     return Response.json(
       { error: "Map bounds are invalid." },
       { status: 400, headers: { "Cache-Control": "no-store" } }

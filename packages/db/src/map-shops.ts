@@ -43,7 +43,9 @@ export async function getMapShops({
     )
 
     if (matchingShop) conditions.push(matchingShop)
-  } else if (bounds) {
+  }
+
+  if (bounds) {
     conditions.push(
       gte(shops.lon, bounds.west),
       lte(shops.lon, bounds.east),
