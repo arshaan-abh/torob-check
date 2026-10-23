@@ -1,6 +1,13 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useTransition,
+} from "react"
 import type { FormEvent } from "react"
 import type { GeoJSONSource, Map as MapLibreMap } from "maplibre-gl"
 import {
@@ -50,6 +57,8 @@ const OPENFREEMAP_STYLE = "https://tiles.openfreemap.org/styles/fiord"
 const COMPACT_DRAWER_SNAP_POINT = "6.25rem"
 const DEFAULT_DRAWER_SNAP_POINT = 0.66
 const SELECTED_SHOP_ZOOM = 18
+const SHOP_LIST_PAGE_SIZE = 40
+const SHOP_LIST_LOAD_AHEAD_PX = 240
 const SHOP_POPOVER_COLLISION_PADDING = {
   top: 70,
   right: 12,
@@ -300,6 +309,9 @@ export default function MapExperience() {
   const locationPermissionDeniedRef = useRef(false)
 
   const [shops, setShops] = useState<Shop[]>([])
+  const [visibleShopCount, setVisibleShopCount] = useState(SHOP_LIST_PAGE_SIZE)
+  const [isLoadingMoreShops, setIsLoadingMoreShops] = useState(false)
+  const [, startTransition] = useTransition()
   const [totalShops, setTotalShops] = useState(0)
   const [shopsTruncated, setShopsTruncated] = useState(false)
   const [shopsStatus, setShopsStatus] = useState<"loading" | "ready" | "error">(
@@ -355,6 +367,8 @@ export default function MapExperience() {
     const controller = new AbortController()
     requestRef.current = controller
     setShopsStatus("loading")
+    setVisibleShopCount(SHOP_LIST_PAGE_SIZE)
+    setIsLoadingMoreShops(false)
     setSearchError(null)
 
     const searchParams = new URLSearchParams()
@@ -408,6 +422,26 @@ export default function MapExperience() {
       return null
     }
   }, [])
+
+  const loadMoreShops = useCallback(() => {
+    if (isLoadingMoreShops || visibleShopCount >= nearestShops.length) return
+
+    const nextShopCount = Math.min(
+      visibleShopCount + SHOP_LIST_PAGE_SIZE,
+      nearestShops.length
+    )
+
+    setIsLoadingMoreShops(true)
+    startTransition(() => {
+      setVisibleShopCount(nextShopCount)
+      setIsLoadingMoreShops(false)
+    })
+  }, [
+    isLoadingMoreShops,
+    nearestShops.length,
+    startTransition,
+    visibleShopCount,
+  ])
 
   const selectShop = useCallback((shop: Shop) => {
     const map = mapRef.current
@@ -1109,7 +1143,23 @@ export default function MapExperience() {
                 </div>
               )}
 
-              <ScrollArea className="min-h-0 flex-1 px-4 **:data-[slot=scroll-area-viewport]:py-4 sm:px-6">
+              <ScrollArea
+                className="min-h-0 flex-1 px-4 **:data-[slot=scroll-area-viewport]:py-4 sm:px-6"
+                onScrollCapture={(event) => {
+                  const viewport = event.target
+
+                  if (!(viewport instanceof HTMLElement)) return
+
+                  const distanceFromBottom =
+                    viewport.scrollHeight -
+                    viewport.scrollTop -
+                    viewport.clientHeight
+
+                  if (distanceFromBottom <= SHOP_LIST_LOAD_AHEAD_PX) {
+                    loadMoreShops()
+                  }
+                }}
+              >
                 {shopsStatus === "loading" ? (
                   <ShopListSkeleton />
                 ) : shopsStatus === "error" ? (
@@ -1125,7 +1175,7 @@ export default function MapExperience() {
                   </div>
                 ) : (
                   <div className="flex flex-col gap-2">
-                    {nearestShops.slice(0, 80).map((shop) => {
+                    {nearestShops.slice(0, visibleShopCount).map((shop) => {
                       const isSelected = shop.shopId === selectedShopId
                       const price = formatPrice(shop.lowestPrice)
 
@@ -1183,6 +1233,7 @@ export default function MapExperience() {
                         </button>
                       )
                     })}
+                    {isLoadingMoreShops && <ShopListSkeleton />}
                   </div>
                 )}
               </ScrollArea>
