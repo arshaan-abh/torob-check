@@ -394,6 +394,17 @@ export default function MapExperience() {
     number | string | null
   >(DEFAULT_DRAWER_SNAP_POINT)
   const [isDrawerOpen, setIsDrawerOpen] = useState(false)
+  const [isAssistantOpen, setIsAssistantOpen] = useState(false)
+
+  const handleDrawerSnapPointChange = useCallback(
+    (snapPoint: number | string | null) => {
+      setDrawerSnapPoint(snapPoint)
+      if (snapPoint !== COMPACT_DRAWER_SNAP_POINT) {
+        setIsAssistantOpen(false)
+      }
+    },
+    []
+  )
 
   useEffect(() => {
     const animationFrame = window.requestAnimationFrame(() => {
@@ -768,7 +779,11 @@ export default function MapExperience() {
   }, [])
 
   const handleAssistantOpenChange = useCallback((open: boolean) => {
-    setIsDrawerOpen(!open)
+    setIsAssistantOpen(open)
+    if (open) {
+      setIsDrawerOpen(true)
+      setDrawerSnapPoint(COMPACT_DRAWER_SNAP_POINT)
+    }
   }, [])
 
   const selectAssistantOffer = useCallback(
@@ -1313,7 +1328,7 @@ export default function MapExperience() {
     : "کوچک کردن فهرست فروشگاه‌ها"
 
   const advanceDrawerSnapPoint = () => {
-    setDrawerSnapPoint(
+    handleDrawerSnapPointChange(
       isCompactDrawer ? DEFAULT_DRAWER_SNAP_POINT : COMPACT_DRAWER_SNAP_POINT
     )
   }
@@ -1359,6 +1374,7 @@ export default function MapExperience() {
         <TorobCheckAssistant
           location={userLocation}
           mapContext={assistantMapContext}
+          open={isAssistantOpen}
           onOpenChange={handleAssistantOpenChange}
           onSelectOffer={selectAssistantOffer}
         />
@@ -1414,7 +1430,7 @@ export default function MapExperience() {
         open={isDrawerOpen}
         snapPoints={DRAWER_SNAP_POINTS}
         snapPoint={drawerSnapPoint}
-        onSnapPointChange={setDrawerSnapPoint}
+        onSnapPointChange={handleDrawerSnapPointChange}
         snapToSequentialPoints
         swipeDirection="down"
         modal={false}

@@ -17,6 +17,7 @@ function PopoverContent({
   align = "center",
   alignOffset = 0,
   collisionPadding,
+  collisionAvoidance,
   side = "bottom",
   sideOffset = 4,
   showArrow = false,
@@ -25,13 +26,19 @@ function PopoverContent({
 }: PopoverPrimitive.Popup.Props &
   Pick<
     PopoverPrimitive.Positioner.Props,
-    "align" | "alignOffset" | "collisionPadding" | "side" | "sideOffset"
+    | "align"
+    | "alignOffset"
+    | "collisionAvoidance"
+    | "collisionPadding"
+    | "side"
+    | "sideOffset"
   > & { showArrow?: boolean }) {
   return (
     <PopoverPrimitive.Portal>
       <PopoverPrimitive.Positioner
         align={align}
         alignOffset={alignOffset}
+        collisionAvoidance={collisionAvoidance}
         collisionPadding={collisionPadding}
         side={side}
         sideOffset={sideOffset}

@@ -154,6 +154,7 @@ type AssistantMessage = UIMessage<never, never, AssistantTools>
 type TorobCheckAssistantProps = {
   location: AssistantLocation
   mapContext: ShoppingAssistantMapContext
+  open: boolean
   onOpenChange: (open: boolean) => void
   onSelectOffer: (offer: ShoppingAssistantOfferSelection) => void
 }
@@ -538,11 +539,11 @@ function AssistantToolResult({
 export function TorobCheckAssistant({
   location,
   mapContext,
+  open,
   onOpenChange,
   onSelectOffer,
 }: TorobCheckAssistantProps) {
   const { setMovement, setSpeech } = useTorobCheck()
-  const [open, setOpen] = useState(false)
   const [input, setInput] = useState("")
   const [characterReady, setCharacterReady] = useState(false)
   const [characterError, setCharacterError] = useState(false)
@@ -695,7 +696,6 @@ export function TorobCheckAssistant({
     if (!characterReady) return
 
     const openAndTalk = window.setTimeout(() => {
-      setOpen(true)
       onOpenChange(true)
       setSpeech("talking")
     }, 900)
@@ -710,7 +710,6 @@ export function TorobCheckAssistant({
   }, [cancelIntro, characterReady, onOpenChange, setMovement, setSpeech])
 
   const handleOpenChange = (nextOpen: boolean) => {
-    setOpen(nextOpen)
     onOpenChange(nextOpen)
     if (nextOpen) cancelIntro()
   }
@@ -725,7 +724,6 @@ export function TorobCheckAssistant({
       return
     }
 
-    setOpen(true)
     onOpenChange(true)
     setMovement("walking")
     setSpeech(status === "streaming" ? "talking" : "silent")
@@ -738,7 +736,6 @@ export function TorobCheckAssistant({
 
       cancelIntro()
       clearError()
-      setOpen(true)
       onOpenChange(true)
       setMovement("walking")
       setSpeech("silent")
@@ -842,6 +839,7 @@ export function TorobCheckAssistant({
         dir="rtl"
         side="top"
         align="end"
+        collisionAvoidance={{ side: "none", fallbackAxisSide: "none" }}
         sideOffset={10}
         collisionPadding={12}
         className="flex h-[min(26rem,calc(100dvh-5rem))] w-[min(22rem,calc(100vw-1.5rem))] max-w-[calc(100vw-1.5rem)] flex-col gap-0 overflow-hidden rounded-2xl border-border/70 bg-card/95 p-0 shadow-2xl shadow-black/20 backdrop-blur-xl"
