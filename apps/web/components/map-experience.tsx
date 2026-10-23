@@ -10,7 +10,6 @@ import {
   ChevronUp,
   LocateFixed,
   MapPin,
-  MessageCircle,
   Minus,
   Plus,
   Search,
@@ -1329,12 +1328,6 @@ export default function MapExperience() {
             className="group relative flex items-center rounded-full transition-transform duration-200 hover:scale-[1.03] focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
           >
             <TorobCheckCharacter className="size-[76px]" />
-            <span
-              className="absolute -top-1 -left-1 grid size-8 place-items-center rounded-full bg-primary text-primary-foreground shadow-md shadow-black/15"
-              aria-hidden="true"
-            >
-              <MessageCircle className="size-4" />
-            </span>
           </button>
         </div>
       )}
