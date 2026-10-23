@@ -1,0 +1,9 @@
+{
+  "app": "torob-check-worker",
+  "port": 3000,
+  "team-id": "6ad6591a615e2e0c8f43adc6",
+  "build": {
+    "location": "germany"
+  },
+  "disks": []
+}

@@ -1,4 +1,5 @@
 import { and, asc, eq, gt, lt } from "drizzle-orm"
+import { createServer } from "node:http"
 import {
   apiRateLimits,
   appSettings,
@@ -16,6 +17,29 @@ const RESEARCH_QUEUE = "torob-check.shop-research"
 const DATABASE_URL = process.env.DATABASE_URL
 if (!DATABASE_URL)
   throw new Error("DATABASE_URL is required by the refresh worker")
+
+const healthPort = Number(process.env.PORT ?? 3000)
+if (!Number.isInteger(healthPort) || healthPort < 1 || healthPort > 65535)
+  throw new Error("PORT must be a valid TCP port")
+
+const healthServer = createServer((request, response) => {
+  if (
+    (request.url !== "/" && request.url !== "/healthz") ||
+    (request.method !== "GET" && request.method !== "HEAD")
+  ) {
+    response.writeHead(404).end()
+    return
+  }
+
+  response.writeHead(200, {
+    "Cache-Control": "no-store",
+    "Content-Type": "text/plain; charset=utf-8",
+  })
+  response.end(request.method === "HEAD" ? undefined : "ok")
+})
+healthServer.listen(healthPort, "0.0.0.0", () => {
+  console.log(`Worker health endpoint listening on ${healthPort}`)
+})
 
 const boss = new PgBoss({
   connectionString: DATABASE_URL,
@@ -576,6 +600,10 @@ async function main() {
   const shutdown = async (signal: string) => {
     console.log(`Stopping source refresh worker (${signal})`)
     await boss.stop({ graceful: true })
+    await new Promise<void>((resolve) => {
+      if (!healthServer.listening) return resolve()
+      healthServer.close(() => resolve())
+    })
     process.exit(0)
   }
   process.once("SIGTERM", () => void shutdown("SIGTERM"))
@@ -584,5 +612,7 @@ async function main() {
 
 main().catch((error: unknown) => {
   console.error("Unable to start source refresh worker", error)
-  process.exitCode = 1
+  healthServer.close(() => {
+    process.exitCode = 1
+  })
 })
