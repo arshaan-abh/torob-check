@@ -1361,16 +1361,15 @@ export default function MapExperience() {
         </div>
       )}
 
-      {assistantOpen && (
-        <ShoppingAssistantPanel
-          mapContext={assistantMapContext}
-          onSelectOffer={selectAssistantOffer}
-          onClose={() => {
-            setAssistantOpen(false)
-            setIsDrawerOpen(true)
-          }}
-        />
-      )}
+      <ShoppingAssistantPanel
+        isOpen={assistantOpen}
+        mapContext={assistantMapContext}
+        onSelectOffer={selectAssistantOffer}
+        onClose={() => {
+          setAssistantOpen(false)
+          setIsDrawerOpen(true)
+        }}
+      />
 
       <Link
         href="/admin/settings"

@@ -1,9 +1,23 @@
 "use client"
 
-import { useEffect, useMemo, useRef, useState, type FormEvent } from "react"
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+} from "react"
 import { useChat } from "@ai-sdk/react"
-import { DefaultChatTransport } from "ai"
-import { ExternalLink, LoaderCircle, MapPin, Send, X } from "lucide-react"
+import { DefaultChatTransport, type UIMessage } from "ai"
+import {
+  ExternalLink,
+  LoaderCircle,
+  MapPin,
+  Send,
+  Trash2,
+  X,
+} from "lucide-react"
 import { Button } from "@workspace/ui/components/button"
 import { ScrollArea } from "@workspace/ui/components/scroll-area"
 import { TorobCheckCharacter } from "@/app/components/torob-check-character"
@@ -26,6 +40,7 @@ export type ShoppingAssistantOfferSelection = {
 }
 
 type Props = {
+  isOpen: boolean
   mapContext: ShoppingAssistantMapContext
   onClose: () => void
   onSelectOffer: (offer: ShoppingAssistantOfferSelection) => void
@@ -61,6 +76,84 @@ type Offer = {
 }
 
 const numberFormat = new Intl.NumberFormat("fa-IR")
+const HISTORY_STORAGE_KEY = "torob-check:shopping-assistant:v1"
+const MAX_HISTORY_MESSAGES = 80
+const MAX_HISTORY_STORAGE_CHARS = 500_000
+
+type LocalAssistantHistory = {
+  messages: UIMessage[]
+  draft: string
+}
+
+function isStoredMessage(value: unknown): value is UIMessage {
+  if (!value || typeof value !== "object") return false
+  const message = value as {
+    id?: unknown
+    role?: unknown
+    parts?: unknown
+  }
+  return (
+    typeof message.id === "string" &&
+    (message.role === "user" || message.role === "assistant") &&
+    Array.isArray(message.parts) &&
+    message.parts.every(
+      (part) =>
+        part !== null &&
+        typeof part === "object" &&
+        typeof (part as { type?: unknown }).type === "string"
+    )
+  )
+}
+
+function readLocalHistory(): LocalAssistantHistory {
+  try {
+    const value: unknown = JSON.parse(
+      window.localStorage.getItem(HISTORY_STORAGE_KEY) ?? "null"
+    )
+    if (!value || typeof value !== "object") return { messages: [], draft: "" }
+    const record = value as {
+      version?: unknown
+      messages?: unknown
+      draft?: unknown
+    }
+    if (record.version !== 1) return { messages: [], draft: "" }
+    return {
+      messages: Array.isArray(record.messages)
+        ? record.messages.filter(isStoredMessage).slice(-MAX_HISTORY_MESSAGES)
+        : [],
+      draft:
+        typeof record.draft === "string" ? record.draft.slice(0, 1000) : "",
+    }
+  } catch {
+    return { messages: [], draft: "" }
+  }
+}
+
+function saveLocalHistory(messages: UIMessage[], draft: string) {
+  try {
+    let savedMessages = messages.slice(-MAX_HISTORY_MESSAGES)
+    let serialized = JSON.stringify({
+      version: 1,
+      messages: savedMessages,
+      draft: draft.slice(0, 1000),
+    })
+    while (
+      serialized.length > MAX_HISTORY_STORAGE_CHARS &&
+      savedMessages.length > 2
+    ) {
+      savedMessages = savedMessages.slice(2)
+      serialized = JSON.stringify({
+        version: 1,
+        messages: savedMessages,
+        draft: draft.slice(0, 1000),
+      })
+    }
+    window.localStorage.setItem(HISTORY_STORAGE_KEY, serialized)
+  } catch {
+    // Storage can be unavailable in private browsing or after its quota is full.
+  }
+}
+
 function priceLabel(offer: Offer) {
   if (!offer.priceToman) {
     return offer.priceFreshness === "stale"
@@ -294,12 +387,20 @@ function ToolResult({ part }: { part: ToolPart }) {
 }
 
 export function ShoppingAssistantPanel({
+  isOpen,
   mapContext,
   onClose,
   onSelectOffer,
 }: Props) {
   const [input, setInput] = useState("")
-  const endRef = useRef<HTMLDivElement>(null)
+  const [historyLoaded, setHistoryLoaded] = useState(false)
+  const scrollAreaRef = useRef<HTMLDivElement>(null)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const shouldStickToBottomRef = useRef(true)
+  const historyRef = useRef<UIMessage[]>([])
+  const pendingDraftRef = useRef("")
+  const discardStreamOnFinishRef = useRef(false)
+  const setMessagesRef = useRef<(messages: UIMessage[]) => void>(() => {})
   const handledSearchToolsRef = useRef(new Set<string>())
   const { setSpeech } = useTorobCheck()
   const transport = useMemo(
@@ -307,16 +408,100 @@ export function ShoppingAssistantPanel({
       new DefaultChatTransport({ api: "/api/assistant", body: { mapContext } }),
     [mapContext]
   )
-  const { messages, sendMessage, status, error, stop } = useChat({ transport })
+  const handleFinish = useCallback(
+    ({
+      messages: finishedMessages,
+      isAbort,
+      isDisconnect,
+      isError,
+    }: {
+      messages: UIMessage[]
+      isAbort: boolean
+      isDisconnect: boolean
+      isError: boolean
+    }) => {
+      if (discardStreamOnFinishRef.current) {
+        discardStreamOnFinishRef.current = false
+        return
+      }
+      if (isAbort || isDisconnect || isError) {
+        saveLocalHistory(historyRef.current, pendingDraftRef.current)
+        setMessagesRef.current(historyRef.current)
+        if (pendingDraftRef.current) setInput(pendingDraftRef.current)
+        return
+      }
+      historyRef.current = finishedMessages
+      pendingDraftRef.current = ""
+      saveLocalHistory(finishedMessages, "")
+    },
+    []
+  )
+  const handleError = useCallback(() => {
+    if (discardStreamOnFinishRef.current) return
+    setMessagesRef.current(historyRef.current)
+    if (pendingDraftRef.current) setInput(pendingDraftRef.current)
+    saveLocalHistory(historyRef.current, pendingDraftRef.current)
+  }, [])
+  const {
+    messages,
+    sendMessage,
+    setMessages,
+    status,
+    error,
+    stop,
+    clearError,
+  } = useChat({ transport, onFinish: handleFinish, onError: handleError })
+  setMessagesRef.current = setMessages
   const busy = status === "submitted" || status === "streaming"
+
+  useEffect(() => {
+    const history = readLocalHistory()
+    historyRef.current = history.messages
+    pendingDraftRef.current = history.draft
+    for (const message of history.messages) {
+      message.parts.forEach((part, index) => {
+        const toolPart = part as ToolPart
+        if (
+          toolPart.type === "tool-searchProducts" &&
+          toolPart.state === "output-available"
+        ) {
+          handledSearchToolsRef.current.add(
+            toolPart.toolCallId ?? `${message.id}:${index}`
+          )
+        }
+      })
+    }
+    setMessages(history.messages)
+    setInput(history.draft)
+    setHistoryLoaded(true)
+  }, [setMessages])
+
+  useEffect(() => {
+    const textarea = textareaRef.current
+    if (!textarea) return
+    textarea.style.height = "0px"
+    textarea.style.height = `${Math.min(textarea.scrollHeight, 112)}px`
+  }, [input])
 
   useEffect(() => {
     setSpeech(busy ? "talking" : "silent")
     return () => setSpeech("silent")
   }, [busy, setSpeech])
+
   useEffect(() => {
-    endRef.current?.scrollIntoView({ block: "end", behavior: "smooth" })
-  }, [messages, status])
+    if (!historyLoaded || !shouldStickToBottomRef.current) return
+    const viewport = scrollAreaRef.current?.querySelector<HTMLElement>(
+      '[data-slot="scroll-area-viewport"]'
+    )
+    if (viewport) viewport.scrollTop = viewport.scrollHeight
+  }, [historyLoaded, isOpen, messages, status])
+
+  useEffect(() => {
+    if (!busy && discardStreamOnFinishRef.current) {
+      discardStreamOnFinishRef.current = false
+    }
+  }, [busy])
+
   useEffect(() => {
     for (const message of [...messages].reverse()) {
       for (let index = message.parts.length - 1; index >= 0; index--) {
@@ -366,16 +551,50 @@ export function ShoppingAssistantPanel({
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     const text = input.trim()
-    if (!text || busy) return
+    if (!historyLoaded || !text || busy) return
+    discardStreamOnFinishRef.current = false
+    clearError()
+    shouldStickToBottomRef.current = true
+    pendingDraftRef.current = text
+    saveLocalHistory(historyRef.current, text)
     sendMessage({ text })
     setInput("")
+  }
+
+  function clearConversation() {
+    if (busy) {
+      discardStreamOnFinishRef.current = true
+      stop()
+    }
+    historyRef.current = []
+    pendingDraftRef.current = ""
+    shouldStickToBottomRef.current = true
+    setMessages([])
+    setInput("")
+    clearError()
+    try {
+      window.localStorage.removeItem(HISTORY_STORAGE_KEY)
+    } catch {
+      // The in-memory conversation still clears if browser storage is blocked.
+    }
+  }
+
+  function trackScrollPosition() {
+    const viewport = scrollAreaRef.current?.querySelector<HTMLElement>(
+      '[data-slot="scroll-area-viewport"]'
+    )
+    if (!viewport) return
+    shouldStickToBottomRef.current =
+      viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight < 72
   }
 
   return (
     <section
       aria-label="دستیار خرید ترب‌چک"
+      aria-hidden={!isOpen}
       dir="rtl"
-      className="absolute top-16 right-3 z-30 flex max-h-[min(70dvh,620px)] w-[min(420px,calc(100vw-24px))] flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-xl shadow-black/20 md:top-20 md:right-5"
+      hidden={!isOpen}
+      className={`${isOpen ? "flex" : "hidden"} ${messages.length > 0 || busy ? "h-[min(70dvh,620px)]" : ""} absolute top-16 right-3 z-30 max-h-[min(70dvh,620px)] min-h-[min(70dvh,320px)] w-[min(420px,calc(100vw-24px))] flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-xl shadow-black/20 md:top-20 md:right-5`}
     >
       <header className="flex items-center justify-between gap-3 border-b border-border/70 px-4 py-3">
         <div className="min-w-0">
@@ -384,139 +603,183 @@ export function ShoppingAssistantPanel({
             <MapPin aria-hidden="true" className="size-3" />
             جست‌وجو در محدوده فعلی نقشه
           </p>
+          <p className="mt-0.5 text-[10px] leading-4 text-muted-foreground">
+            پیام‌ها فقط در همین مرورگر ذخیره می‌شوند.
+          </p>
         </div>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="shrink-0 rounded-full"
-          aria-label="بستن دستیار خرید"
-          onClick={onClose}
-        >
-          <X aria-hidden="true" />
-        </Button>
+        <div className="flex shrink-0 items-center gap-1">
+          {(messages.length > 0 || input.length > 0) && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="rounded-full"
+              aria-label="پاک‌کردن گفت‌وگو و شروع دوباره"
+              title="پاک‌کردن گفت‌وگو"
+              onClick={clearConversation}
+            >
+              <Trash2 aria-hidden="true" />
+            </Button>
+          )}
+          <Button
+            variant="ghost"
+            size="icon"
+            className="rounded-full"
+            aria-label="بستن دستیار خرید"
+            onClick={onClose}
+          >
+            <X aria-hidden="true" />
+          </Button>
+        </div>
       </header>
-      <div className="flex shrink-0 items-center gap-3 border-b border-border/70 bg-muted/20 px-4 py-2.5">
-        <TorobCheckCharacter
-          className="shrink-0"
-          size={58}
-          label="تربچِک، همراه خرید شما"
-        />
-        <div className="min-w-0">
-          <p className="text-sm font-semibold">
-            {busy
-              ? "همراه خرید در حال بررسی است"
-              : messages.length === 0
-                ? "دنبال چه چیزی هستید؟"
-                : "همراه خرید شما"}
-          </p>
-          <p className="mt-0.5 text-xs leading-5 text-muted-foreground">
-            {messages.length === 0
-              ? "محصول، بودجه به تومان، ویژگی‌ها یا محله را بنویسید. قیمت و موجودی با زمان و سطح تأییدشان نشان داده می‌شوند."
-              : busy
-                ? "داده‌های فروشگاه‌ها در حال بررسی است."
-                : "برای ادامه یا پرسش درباره فروشگاه‌ها پیام بنویسید."}
+      {historyLoaded && messages.length === 0 && !busy && (
+        <div className="flex shrink-0 items-center gap-3 border-b border-border/70 bg-muted/20 px-4 py-2.5">
+          <TorobCheckCharacter
+            className="shrink-0"
+            size={52}
+            label="تربچِک، همراه خرید شما"
+          />
+          <div className="min-w-0">
+            <p className="text-sm font-semibold">دنبال چه چیزی هستید؟</p>
+            <p className="mt-0.5 text-xs leading-5 text-muted-foreground">
+              محصول، بودجه به تومان، ویژگی‌ها یا محله را بنویسید. قیمت و موجودی
+              فقط با تأیید تازه فروشگاه نمایش داده می‌شوند.
+            </p>
+          </div>
+        </div>
+      )}
+      {busy && (
+        <div className="flex shrink-0 items-center gap-2 border-b border-border/70 bg-muted/20 px-4 py-1.5">
+          <TorobCheckCharacter
+            className="shrink-0"
+            size={38}
+            label="تربچِک در حال بررسی است"
+          />
+          <p role="status" className="text-xs text-muted-foreground">
+            در حال بررسی داده‌های فروشگاه
           </p>
         </div>
-      </div>
-      <ScrollArea className="min-h-32 flex-1 px-4 py-3">
-        <div className="grid gap-4">
-          {messages.map((message) => (
-            <article
-              key={message.id}
-              className={`grid gap-2 text-sm leading-6 ${message.role === "user" ? "justify-items-start" : "justify-items-stretch"}`}
-            >
-              <div
-                className={
-                  message.role === "user"
-                    ? "max-w-[88%] rounded-2xl rounded-tl-sm bg-primary px-3 py-2 text-primary-foreground"
-                    : "max-w-full"
-                }
+      )}
+      {!historyLoaded && (
+        <p
+          role="status"
+          className="flex shrink-0 items-center gap-2 px-4 py-3 text-xs text-muted-foreground"
+        >
+          <LoaderCircle aria-hidden="true" className="size-4 animate-spin" />
+          در حال بازیابی گفت‌وگوی ذخیره‌شده
+        </p>
+      )}
+      <div
+        ref={scrollAreaRef}
+        className="min-h-0 flex-1"
+        onScrollCapture={trackScrollPosition}
+      >
+        <ScrollArea className="h-full min-h-0">
+          <div className="grid gap-3 px-4 py-3">
+            {messages.map((message) => (
+              <article
+                key={message.id}
+                className={`grid min-w-0 gap-2 text-sm leading-6 ${message.role === "user" ? "justify-items-start" : "justify-items-stretch"}`}
               >
-                {message.parts.map((part, index) =>
-                  part.type === "text" ? (
-                    <p
-                      key={`${message.id}-text-${index}`}
-                      className="whitespace-pre-wrap"
-                    >
-                      {part.text}
-                    </p>
-                  ) : null
-                )}
-              </div>
-              {message.parts.map((part, index) => (
-                <ToolResult
-                  key={`${message.id}-tool-${index}`}
-                  part={part as ToolPart}
-                />
-              ))}
-            </article>
-          ))}
-          {busy && (
-            <p
-              role="status"
-              className="flex items-center gap-2 text-xs text-muted-foreground"
-            >
-              <LoaderCircle
-                aria-hidden="true"
-                className="size-4 animate-spin"
-              />
-              در حال بررسی داده‌های فروشگاه
-            </p>
-          )}
-          {error && (
-            <p
-              role="alert"
-              className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive"
-            >
-              پاسخ دریافت نشد. دوباره تلاش کنید.
-            </p>
-          )}
-          <div ref={endRef} />
-        </div>
-      </ScrollArea>
+                <div
+                  className={
+                    message.role === "user"
+                      ? "max-w-[88%] rounded-2xl rounded-tl-sm bg-primary px-3 py-2 text-primary-foreground"
+                      : "max-w-full min-w-0"
+                  }
+                >
+                  {message.parts.map((part, index) =>
+                    part.type === "text" && part.text.trim() ? (
+                      <p
+                        key={`${message.id}-text-${index}`}
+                        className="break-words whitespace-pre-wrap"
+                      >
+                        {part.text.trimStart()}
+                      </p>
+                    ) : null
+                  )}
+                </div>
+                {message.parts.map((part, index) => (
+                  <ToolResult
+                    key={`${message.id}-tool-${index}`}
+                    part={part as ToolPart}
+                  />
+                ))}
+              </article>
+            ))}
+            {error && (
+              <p
+                role="alert"
+                className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive"
+              >
+                پاسخ کامل نشد. متن پیام برای تلاش دوباره در ورودی بازیابی شده
+                است.
+              </p>
+            )}
+          </div>
+        </ScrollArea>
+      </div>
       <form
-        className="relative border-t border-border/70 p-3"
+        className="shrink-0 border-t border-border/70 p-3"
         onSubmit={submit}
       >
         <label className="sr-only" htmlFor="assistant-message">
           پیام به دستیار خرید
         </label>
-        <textarea
-          id="assistant-message"
-          className="max-h-28 min-h-14 w-full resize-none rounded-xl border border-input bg-background px-3 py-2 pe-12 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          value={input}
-          onChange={(event) => setInput(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" && !event.shiftKey) {
-              event.preventDefault()
-              event.currentTarget.form?.requestSubmit()
-            }
-          }}
-          placeholder="مثلاً کفش پیاده‌روی تا ۳ میلیون تومان"
-          maxLength={1000}
-        />
-        {busy ? (
-          <Button
-            type="button"
-            variant="outline"
-            size="icon"
-            className="absolute bottom-4 left-4"
-            aria-label="توقف پاسخ"
-            onClick={stop}
-          >
-            <X aria-hidden="true" />
-          </Button>
-        ) : (
-          <Button
-            type="submit"
-            size="icon"
-            className="absolute bottom-4 left-4"
-            aria-label="ارسال پیام"
-            disabled={!input.trim()}
-          >
-            <Send aria-hidden="true" />
-          </Button>
-        )}
+        <div className="relative">
+          <textarea
+            ref={textareaRef}
+            id="assistant-message"
+            className="max-h-28 min-h-14 w-full resize-none rounded-xl border border-input bg-background py-3 pr-3 pl-12 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
+            value={input}
+            disabled={!historyLoaded || busy}
+            onChange={(event) => {
+              const value = event.target.value
+              pendingDraftRef.current = value
+              setInput(value)
+              saveLocalHistory(historyRef.current, value)
+            }}
+            onKeyDown={(event) => {
+              if (
+                event.key === "Enter" &&
+                !event.shiftKey &&
+                !event.nativeEvent.isComposing
+              ) {
+                event.preventDefault()
+                event.currentTarget.form?.requestSubmit()
+              }
+            }}
+            placeholder="مثلاً کفش پیاده‌روی تا ۳ میلیون تومان"
+            maxLength={1000}
+            rows={1}
+          />
+          {busy ? (
+            <div className="absolute z-10" style={{ left: 8, bottom: 12 }}>
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                className="size-9"
+                aria-label="توقف پاسخ"
+                onClick={stop}
+              >
+                <X aria-hidden="true" />
+              </Button>
+            </div>
+          ) : (
+            <div className="absolute z-10" style={{ left: 8, bottom: 12 }}>
+              <Button
+                type="submit"
+                size="icon"
+                className="size-9"
+                aria-label="ارسال پیام"
+                disabled={!historyLoaded || !input.trim()}
+              >
+                <Send aria-hidden="true" />
+              </Button>
+            </div>
+          )}
+        </div>
       </form>
     </section>
   )
