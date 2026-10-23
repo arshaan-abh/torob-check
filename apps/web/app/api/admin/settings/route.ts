@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server"
 import { appSettings, getDb, merchantAuditLogs } from "@workspace/db"
 import {
-  getVerifiedUser,
-  isSystemAdmin,
+  getAuthenticatedUser,
   isSystemAdminConfigured,
 } from "@/lib/merchant-session"
+import { isSystemAdmin } from "@/lib/system-admin"
 import {
   encryptSetting,
   getRuntimeSettings,
@@ -70,15 +70,15 @@ function allowedProviderUrl(value: string) {
 }
 
 export async function GET(request: Request) {
-  if (!isSystemAdminConfigured())
+  if (!(await isSystemAdminConfigured()))
     return NextResponse.json(
       { error: "Admin setup required.", setupRequired: true },
       { status: 503 }
     )
-  const actor = await getVerifiedUser(request)
+  const actor = await getAuthenticatedUser(request)
   if (!actor)
     return NextResponse.json({ error: "Sign in required." }, { status: 401 })
-  if (!isSystemAdmin(actor.email))
+  if (!(await isSystemAdmin(actor.id, actor.email)))
     return NextResponse.json(
       { error: "System administrator access required." },
       { status: 403 }
@@ -102,15 +102,15 @@ export async function PATCH(request: Request) {
       { error: "Request origin is not allowed." },
       { status: 403 }
     )
-  if (!isSystemAdminConfigured())
+  if (!(await isSystemAdminConfigured()))
     return NextResponse.json(
       { error: "Admin setup required.", setupRequired: true },
       { status: 503 }
     )
-  const actor = await getVerifiedUser(request)
+  const actor = await getAuthenticatedUser(request)
   if (!actor)
     return NextResponse.json({ error: "Sign in required." }, { status: 401 })
-  if (!isSystemAdmin(actor.email))
+  if (!(await isSystemAdmin(actor.id, actor.email)))
     return NextResponse.json(
       { error: "System administrator access required." },
       { status: 403 }

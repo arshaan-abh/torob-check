@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server"
 import { and, desc, eq } from "drizzle-orm"
 import { getDb, merchantAuditLogs, shopSources, shops } from "@workspace/db"
-import { getVerifiedUser, isSystemAdmin } from "@/lib/merchant-session"
+import { getSystemAdminUser } from "@/lib/merchant-session"
 import { parsePublicHttpsUrl } from "@/lib/safe-url"
 import {
   enforceRateLimit,
@@ -25,8 +25,8 @@ export async function POST(request: Request) {
       { error: "Request origin is not allowed." },
       { status: 403 }
     )
-  const actor = await getVerifiedUser(request)
-  if (!actor || !isSystemAdmin(actor.email))
+  const actor = await getSystemAdminUser(request)
+  if (!actor)
     return NextResponse.json(
       { error: "System administrator access required." },
       { status: 403 }
@@ -107,8 +107,8 @@ export async function POST(request: Request) {
 }
 
 export async function GET(request: Request) {
-  const actor = await getVerifiedUser(request)
-  if (!actor || !isSystemAdmin(actor.email))
+  const actor = await getSystemAdminUser(request)
+  if (!actor)
     return NextResponse.json(
       { error: "System administrator access required." },
       { status: 403 }
@@ -137,8 +137,8 @@ export async function PATCH(request: Request) {
       { error: "Request origin is not allowed." },
       { status: 403 }
     )
-  const actor = await getVerifiedUser(request)
-  if (!actor || !isSystemAdmin(actor.email))
+  const actor = await getSystemAdminUser(request)
+  if (!actor)
     return NextResponse.json(
       { error: "System administrator access required." },
       { status: 403 }

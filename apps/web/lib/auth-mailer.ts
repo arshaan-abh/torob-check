@@ -9,16 +9,12 @@ export async function sendAuthLink(to: string, url: string, purpose: string) {
     smtpFrom: from,
     resendApiKey,
   } = await getRuntimeSettings()
-  if (!from) {
-    throw new Error("SMTP_FROM is required for account email")
-  }
+  if (!from) return
 
   const text = `${purpose}\n\n${url}\n\nIf you did not request this, you can ignore this email.`
 
   if (emailProvider === "resend") {
-    if (!resendApiKey) {
-      throw new Error("RESEND_API_KEY is required for account email")
-    }
+    if (!resendApiKey) return
 
     const response = await fetch("https://api.resend.com/emails", {
       method: "POST",
@@ -37,11 +33,9 @@ export async function sendAuthLink(to: string, url: string, purpose: string) {
   }
 
   if (emailProvider !== "smtp") {
-    throw new Error("Choose a supported account email provider")
+    return
   }
-  if (!smtpUrl) {
-    throw new Error("SMTP_URL is required for account email")
-  }
+  if (!smtpUrl) return
 
   const transport = nodemailer.createTransport(smtpUrl)
   await transport.sendMail({ from, to, subject: purpose, text })
