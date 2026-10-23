@@ -10,8 +10,10 @@ import {
   LoaderCircle,
   MapPin,
   Search,
+  Sparkles,
   Square,
   Trash2,
+  X,
 } from "lucide-react"
 import { useCallback, useEffect, useRef, useState } from "react"
 import type { FormEvent, KeyboardEvent } from "react"
@@ -22,8 +24,24 @@ import {
   AlertTitle,
 } from "@workspace/ui/components/alert"
 import { Avatar, AvatarFallback } from "@workspace/ui/components/avatar"
+import { Badge } from "@workspace/ui/components/badge"
 import { Bubble, BubbleContent } from "@workspace/ui/components/bubble"
 import { Button } from "@workspace/ui/components/button"
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@workspace/ui/components/card"
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@workspace/ui/components/empty"
 import { Field, FieldGroup, FieldLabel } from "@workspace/ui/components/field"
 import {
   InputGroup,
@@ -65,7 +83,10 @@ import {
   TooltipTrigger,
 } from "@workspace/ui/components/tooltip"
 
-import { TorobCheckCharacter } from "@/app/components/torob-check-character"
+import {
+  TorobCheckCharacter,
+  type TorobCheckGaze,
+} from "@/app/components/torob-check-character"
 import { useTorobCheck } from "@/app/components/torob-check-provider"
 import type {
   ShoppingAssistantMapContext,
@@ -154,6 +175,7 @@ type AssistantMessage = UIMessage<never, never, AssistantTools>
 type TorobCheckAssistantProps = {
   location: AssistantLocation
   mapContext: ShoppingAssistantMapContext
+  gaze: TorobCheckGaze
   open: boolean
   onOpenChange: (open: boolean) => void
   onSelectOffer: (offer: ShoppingAssistantOfferSelection) => void
@@ -185,8 +207,8 @@ const welcomeMessage: AssistantMessage = {
 }
 
 const quickPrompts = [
-  "یک فشارسنج مناسب پیدا کن",
-  "فروشگاه‌های نزدیکم را مقایسه کن",
+  { label: "یک فشارسنج مناسب پیدا کن", icon: Search },
+  { label: "فروشگاه‌های نزدیکم را مقایسه کن", icon: MapPin },
 ]
 
 function getMessageText(message: AssistantMessage) {
@@ -322,78 +344,133 @@ function AssistantToolResult({
     return (
       <div className="mt-2 grid gap-2">
         {offers.length === 0 ? (
-          <p className="text-xs text-muted-foreground">
-            در این محدوده نتیجه‌ای پیدا نشد.
-          </p>
+          <Empty className="gap-2 rounded-xl border border-dashed border-border/70 bg-muted/20 px-3 py-4">
+            <EmptyHeader className="gap-1.5">
+              <EmptyMedia variant="icon" className="mb-0 size-7">
+                <Search aria-hidden="true" />
+              </EmptyMedia>
+              <EmptyTitle className="text-xs">
+                در این محدوده نتیجه‌ای پیدا نشد
+              </EmptyTitle>
+              <EmptyDescription className="text-xs">
+                نام کالا یا محدودهٔ جستجو را تغییر بده.
+              </EmptyDescription>
+            </EmptyHeader>
+          </Empty>
         ) : (
-          offers.map((offer) => (
-            <article
-              key={offer.offerId}
-              className="rounded-xl border border-border/70 bg-background p-3"
-            >
-              <h3 className="font-semibold">
-                {offer.productTitle ?? offer.sellerTitle ?? "کالا"}
-              </h3>
-              <p className="mt-1 text-sm">{offerPriceLabel(offer)}</p>
-              {offer.budgetFit === "unknown" && (
-                <p className="mt-1 text-xs text-muted-foreground">
-                  قیمت تازه نداریم و نمی‌توانیم قرارگرفتن در بودجه را تأیید
-                  کنیم.
-                </p>
-              )}
-              <p className="mt-1 text-xs text-muted-foreground">
-                {offer.shopName ?? "فروشگاه"}
-                {offer.address ? ` · ${offer.address}` : ""}
-              </p>
-              <p className="mt-1 text-xs text-muted-foreground">
-                {offer.stockFreshness === "fresh" &&
-                offer.stockConfirmation === "merchant_confirmed" &&
-                offer.stockStatus === "in_stock"
-                  ? "موجودی تازه تأیید شده"
-                  : offer.stockFreshness === "fresh" &&
-                      offer.stockConfirmation === "merchant_confirmed" &&
-                      offer.stockStatus === "out_of_stock"
-                    ? "ناموجودی تازه تأیید شده"
-                    : offer.stockFreshness === "stale"
-                      ? "آخرین وضعیت موجودی قدیمی است"
-                      : "موجودی تازه تأیید نشده"}
-                {offer.distanceKm !== null
-                  ? ` · ${numberFormat.format(Math.round(offer.distanceKm * 10) / 10)} کیلومتر`
-                  : ""}
-              </p>
-              {offer.evidenceUrl && (
-                <a
-                  className="mt-2 inline-flex items-center gap-1 text-xs text-primary underline underline-offset-4"
-                  href={offer.evidenceUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  منبع قیمت
-                  <ExternalLink aria-hidden="true" className="size-3" />
-                </a>
-              )}
-              {offer.lat !== null && offer.lon !== null && (
-                <button
-                  type="button"
-                  className="mt-2 block text-xs font-medium text-primary underline underline-offset-4"
-                  onClick={() =>
-                    onSelectOffer({
-                      shopId: offer.shopId,
-                      shopName: offer.shopName,
-                      address: offer.address,
-                      locationLabel: offer.locationLabel,
-                      categoryName: offer.categoryName,
-                      lat: offer.lat,
-                      lon: offer.lon,
-                      priceToman: offer.priceToman,
-                    })
-                  }
-                >
-                  نمایش فروشگاه روی نقشه
-                </button>
-              )}
-            </article>
-          ))
+          offers.map((offer) => {
+            const isConfirmedInStock =
+              offer.stockFreshness === "fresh" &&
+              offer.stockConfirmation === "merchant_confirmed" &&
+              offer.stockStatus === "in_stock"
+            const isConfirmedOutOfStock =
+              offer.stockFreshness === "fresh" &&
+              offer.stockConfirmation === "merchant_confirmed" &&
+              offer.stockStatus === "out_of_stock"
+            const stockLabel = isConfirmedInStock
+              ? "موجودی تازه تأیید شده"
+              : isConfirmedOutOfStock
+                ? "ناموجودی تازه تأیید شده"
+                : offer.stockFreshness === "stale"
+                  ? "آخرین وضعیت موجودی قدیمی است"
+                  : "موجودی تازه تأیید نشده"
+
+            return (
+              <Card
+                key={offer.offerId}
+                size="sm"
+                className="gap-0 border-border/60 bg-background/80 py-0 shadow-none ring-1 ring-foreground/5"
+              >
+                <CardHeader className="gap-1 p-3 pb-2">
+                  <CardTitle className="line-clamp-2 text-sm leading-5 font-semibold">
+                    {offer.productTitle ?? offer.sellerTitle ?? "کالا"}
+                  </CardTitle>
+                  <CardDescription className="truncate text-xs">
+                    {offer.shopName ?? "فروشگاه"}
+                    {offer.address ? ` · ${offer.address}` : ""}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="grid gap-2 px-3 pb-3">
+                  <p className="text-[13px] leading-5 font-semibold text-foreground">
+                    {offerPriceLabel(offer)}
+                  </p>
+                  {offer.budgetFit === "unknown" && (
+                    <p className="text-xs leading-5 text-muted-foreground">
+                      قیمت تازه نداریم و نمی‌توانیم قرارگرفتن در بودجه را تأیید
+                      کنیم.
+                    </p>
+                  )}
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <Badge
+                      variant={
+                        isConfirmedOutOfStock
+                          ? "destructive"
+                          : isConfirmedInStock
+                            ? "secondary"
+                            : "outline"
+                      }
+                      className="h-5 px-2 text-[10px] font-normal"
+                    >
+                      {stockLabel}
+                    </Badge>
+                    {offer.distanceKm !== null && (
+                      <Badge
+                        variant="outline"
+                        className="h-5 px-2 text-[10px] font-normal"
+                      >
+                        {numberFormat.format(
+                          Math.round(offer.distanceKm * 10) / 10
+                        )}{" "}
+                        کیلومتر
+                      </Badge>
+                    )}
+                  </div>
+                </CardContent>
+                {(offer.evidenceUrl ||
+                  (offer.lat !== null && offer.lon !== null)) && (
+                  <CardFooter className="flex flex-wrap justify-between gap-2 border-border/60 bg-muted/20 px-3 py-2">
+                    {offer.evidenceUrl && (
+                      <a
+                        className="inline-flex items-center gap-1 text-xs font-medium text-primary underline-offset-4 hover:underline"
+                        href={offer.evidenceUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        منبع قیمت
+                        <ExternalLink
+                          aria-hidden="true"
+                          className="size-3 shrink-0"
+                        />
+                      </a>
+                    )}
+                    {offer.lat !== null && offer.lon !== null && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() =>
+                          onSelectOffer({
+                            shopId: offer.shopId,
+                            shopName: offer.shopName,
+                            address: offer.address,
+                            locationLabel: offer.locationLabel,
+                            categoryName: offer.categoryName,
+                            lat: offer.lat,
+                            lon: offer.lon,
+                            priceToman: offer.priceToman,
+                          })
+                        }
+                        className="h-7 rounded-lg"
+                      >
+                        <MapPin data-icon="inline-start" aria-hidden="true" />
+                        نمایش روی نقشه
+                      </Button>
+                    )}
+                  </CardFooter>
+                )}
+              </Card>
+            )
+          })
         )}
       </div>
     )
@@ -410,42 +487,65 @@ function AssistantToolResult({
     } | null
     if (!shop) return null
     return (
-      <article className="mt-2 rounded-xl border border-border/70 bg-background p-3 text-sm">
-        <h3 className="font-semibold">{shop.name ?? "فروشگاه"}</h3>
-        {shop.address && (
-          <p className="mt-1 text-xs text-muted-foreground">{shop.address}</p>
-        )}
-        <p className="mt-2 text-xs">
-          ساعت کاری:{" "}
-          {shop.hoursFreshness === "fresh" && shop.weeklyHours
-            ? "تأیید فروشگاه در هفت روز اخیر"
-            : "اطلاعات تازه در دسترس نیست"}
-        </p>
-        {shop.hoursObservedAt && (
-          <time
-            className="mt-1 block text-xs text-muted-foreground"
-            dateTime={shop.hoursObservedAt}
+      <Card
+        size="sm"
+        className="mt-2 gap-0 border-border/60 bg-background/80 py-0 shadow-none ring-1 ring-foreground/5"
+      >
+        <CardHeader className="gap-1 p-3 pb-2">
+          <CardTitle className="text-sm font-semibold">
+            {shop.name ?? "فروشگاه"}
+          </CardTitle>
+          {shop.address && (
+            <CardDescription className="text-xs">
+              {shop.address}
+            </CardDescription>
+          )}
+        </CardHeader>
+        <CardContent className="grid gap-2 px-3 pb-3">
+          <Badge
+            variant={
+              shop.hoursFreshness === "fresh" && shop.weeklyHours
+                ? "secondary"
+                : "outline"
+            }
+            className="h-auto w-fit px-2 py-1 text-[10px] font-normal whitespace-normal"
           >
-            آخرین تأیید:{" "}
-            {new Intl.DateTimeFormat("fa-IR", {
-              dateStyle: "medium",
-              timeStyle: "short",
-            }).format(new Date(shop.hoursObservedAt))}
-          </time>
+            ساعت کاری:{" "}
+            {shop.hoursFreshness === "fresh" && shop.weeklyHours
+              ? "تأیید فروشگاه در هفت روز اخیر"
+              : "اطلاعات تازه در دسترس نیست"}
+          </Badge>
+          {shop.hoursObservedAt && (
+            <time
+              className="text-xs text-muted-foreground"
+              dateTime={shop.hoursObservedAt}
+            >
+              آخرین تأیید:{" "}
+              {new Intl.DateTimeFormat("fa-IR", {
+                dateStyle: "medium",
+                timeStyle: "short",
+              }).format(new Date(shop.hoursObservedAt))}
+            </time>
+          )}
+        </CardContent>
+        {!!shop.sources?.length && (
+          <CardFooter className="flex flex-wrap gap-2 border-border/60 bg-muted/20 px-3 py-2">
+            {shop.sources.map((source) => (
+              <a
+                key={source.url}
+                className="inline-flex items-center gap-1 text-xs font-medium text-primary underline-offset-4 hover:underline"
+                href={source.url}
+                target="_blank"
+                rel="noreferrer"
+              >
+                منبع{" "}
+                {source.sourceType === "instagram" ? "اینستاگرام" : "فروشگاه"}
+                <ExternalLink aria-hidden="true" className="size-3 shrink-0" />
+              </a>
+            ))}
+          </CardFooter>
         )}
-        {shop.sources?.map((source) => (
-          <a
-            key={source.url}
-            className="mt-2 inline-flex items-center gap-1 text-xs text-primary underline underline-offset-4"
-            href={source.url}
-            target="_blank"
-            rel="noreferrer"
-          >
-            منبع {source.sourceType === "instagram" ? "اینستاگرام" : "فروشگاه"}
-            <ExternalLink aria-hidden="true" className="size-3" />
-          </a>
-        ))}
-      </article>
+      </Card>
     )
   }
 
@@ -463,41 +563,61 @@ function AssistantToolResult({
     return (
       <div className="mt-2 grid gap-2">
         {queued && (
-          <p role="status" className="text-xs text-muted-foreground">
-            پژوهش منبع فروشگاه در پس‌زمینه آغاز شد؛ پاسخ فعلی منتظر آن نمی‌ماند.
-          </p>
-        )}
-        {findings.length > 0 && (
-          <p className="text-xs font-semibold text-amber-800 dark:text-amber-200">
-            یافته عمومی · تأییدنشده
-          </p>
+          <Alert role="status" className="rounded-xl bg-muted/20">
+            <AlertDescription className="text-xs leading-5">
+              پژوهش منبع فروشگاه در پس‌زمینه آغاز شد؛ پاسخ فعلی منتظر آن
+              نمی‌ماند.
+            </AlertDescription>
+          </Alert>
         )}
         {findings.map((finding) => (
-          <a
+          <Card
             key={finding.url}
-            className="rounded-xl border border-border/70 bg-background p-3"
-            href={finding.url}
-            target="_blank"
-            rel="noreferrer"
+            size="sm"
+            className="gap-0 border-border/60 bg-background/80 py-0 shadow-none ring-1 ring-foreground/5"
           >
-            <span className="flex items-center justify-between gap-2 text-sm font-semibold">
-              {finding.title}
-              <ExternalLink aria-hidden="true" className="size-3 shrink-0" />
-            </span>
-            <span className="mt-1 block text-xs text-muted-foreground">
-              {finding.excerpt.slice(0, 220)}
-            </span>
-            <time
-              className="mt-2 block text-[11px] text-muted-foreground"
-              dateTime={finding.observedAt}
-            >
-              مشاهده‌شده:{" "}
-              {new Intl.DateTimeFormat("fa-IR", {
-                dateStyle: "medium",
-                timeStyle: "short",
-              }).format(new Date(finding.observedAt))}
-            </time>
-          </a>
+            <CardHeader className="gap-2 p-3 pb-2">
+              <div className="flex items-center justify-between gap-2">
+                <Badge variant="outline" className="font-normal">
+                  یافته عمومی · تأییدنشده
+                </Badge>
+                <a
+                  href={finding.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  aria-label={`بازکردن منبع: ${finding.title}`}
+                  className="rounded-md text-muted-foreground transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                >
+                  <ExternalLink aria-hidden="true" className="size-4" />
+                </a>
+              </div>
+              <CardTitle className="text-sm leading-5">
+                <a
+                  href={finding.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="underline-offset-4 hover:text-primary hover:underline"
+                >
+                  {finding.title}
+                </a>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="grid gap-2 px-3 pb-3">
+              <p className="text-xs leading-5 text-muted-foreground">
+                {finding.excerpt.slice(0, 220)}
+              </p>
+              <time
+                className="text-[11px] text-muted-foreground/80"
+                dateTime={finding.observedAt}
+              >
+                مشاهده‌شده:{" "}
+                {new Intl.DateTimeFormat("fa-IR", {
+                  dateStyle: "medium",
+                  timeStyle: "short",
+                }).format(new Date(finding.observedAt))}
+              </time>
+            </CardContent>
+          </Card>
         ))}
       </div>
     )
@@ -510,26 +630,55 @@ function AssistantToolResult({
       : []
     if (!draft && links.length === 0) return null
     return (
-      <article className="mt-2 rounded-xl border border-border/70 bg-background p-3 text-xs">
-        <p className="whitespace-pre-wrap">{draft}</p>
-        <p className="mt-2 text-muted-foreground">
-          پیام ارسال نمی‌شود؛ خودت لینک تماس را انتخاب کن.
-        </p>
-        <div className="mt-2 flex flex-wrap gap-2">
-          {links.map((link) => (
-            <a
-              key={link.href}
-              className="inline-flex items-center gap-1 rounded-full bg-primary px-2.5 py-1 font-medium text-primary-foreground"
-              href={link.href}
-              target={link.href.startsWith("https:") ? "_blank" : undefined}
-              rel={link.href.startsWith("https:") ? "noreferrer" : undefined}
-            >
-              {link.label}
-              <ExternalLink aria-hidden="true" className="size-3" />
-            </a>
-          ))}
-        </div>
-      </article>
+      <Card
+        size="sm"
+        className="mt-2 gap-0 border-border/60 bg-background/80 py-0 shadow-none ring-1 ring-foreground/5"
+      >
+        <CardHeader className="p-3 pb-2">
+          <CardTitle className="text-sm font-semibold">
+            متن پیشنهادی برای تماس
+          </CardTitle>
+        </CardHeader>
+        {draft && (
+          <CardContent className="px-3 pb-3">
+            <p className="text-xs leading-5 whitespace-pre-wrap">{draft}</p>
+          </CardContent>
+        )}
+        <CardFooter className="flex-col items-start gap-2 border-border/60 bg-muted/20 px-3 py-2.5">
+          <p className="text-xs text-muted-foreground">
+            پیام ارسال نمی‌شود؛ خودت لینک تماس را انتخاب کن.
+          </p>
+          {links.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {links.map((link) => (
+                <Button
+                  key={link.href}
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  render={
+                    <a
+                      href={link.href}
+                      target={
+                        link.href.startsWith("https:") ? "_blank" : undefined
+                      }
+                      rel={
+                        link.href.startsWith("https:")
+                          ? "noreferrer"
+                          : undefined
+                      }
+                    />
+                  }
+                  className="h-7 rounded-lg"
+                >
+                  {link.label}
+                  <ExternalLink data-icon="inline-end" aria-hidden="true" />
+                </Button>
+              ))}
+            </div>
+          )}
+        </CardFooter>
+      </Card>
     )
   }
 
@@ -539,6 +688,7 @@ function AssistantToolResult({
 export function TorobCheckAssistant({
   location,
   mapContext,
+  gaze,
   open,
   onOpenChange,
   onSelectOffer,
@@ -548,6 +698,7 @@ export function TorobCheckAssistant({
   const [characterReady, setCharacterReady] = useState(false)
   const [characterError, setCharacterError] = useState(false)
   const [historyLoaded, setHistoryLoaded] = useState(false)
+  const [introTalking, setIntroTalking] = useState(false)
   const introTimersRef = useRef<number[]>([])
   const previousStatusRef = useRef<string>("ready")
   const historyRef = useRef<AssistantMessage[]>([])
@@ -610,6 +761,10 @@ export function TorobCheckAssistant({
   })
   setMessagesRef.current = setMessages
   const isBusy = status === "submitted" || status === "streaming"
+
+  useEffect(() => {
+    setSpeech(open && (isBusy || introTalking) ? "talking" : "silent")
+  }, [introTalking, isBusy, open, setSpeech])
 
   useEffect(() => {
     const history = readLocalHistory()
@@ -697,21 +852,27 @@ export function TorobCheckAssistant({
 
     const openAndTalk = window.setTimeout(() => {
       onOpenChange(true)
-      setSpeech("talking")
+      setIntroTalking(true)
     }, 900)
     const settle = window.setTimeout(() => {
-      setSpeech("silent")
+      setIntroTalking(false)
       setMovement("idle")
     }, 3300)
 
     introTimersRef.current = [openAndTalk, settle]
 
     return cancelIntro
-  }, [cancelIntro, characterReady, onOpenChange, setMovement, setSpeech])
+  }, [cancelIntro, characterReady, onOpenChange, setMovement])
 
   const handleOpenChange = (nextOpen: boolean) => {
     onOpenChange(nextOpen)
-    if (nextOpen) cancelIntro()
+    if (nextOpen) return
+
+    cancelIntro()
+    setIntroTalking(false)
+    if (!isBusy) {
+      setMovement("idle")
+    }
   }
 
   useEffect(() => {
@@ -720,14 +881,11 @@ export function TorobCheckAssistant({
 
     if (status === "ready" || status === "error") {
       setMovement("idle")
-      setSpeech("silent")
       return
     }
 
-    onOpenChange(true)
     setMovement("walking")
-    setSpeech(status === "streaming" ? "talking" : "silent")
-  }, [onOpenChange, setMovement, setSpeech, status])
+  }, [setMovement, status])
 
   const submitMessage = useCallback(
     (text: string) => {
@@ -735,10 +893,10 @@ export function TorobCheckAssistant({
       if (!trimmedText || isBusy) return
 
       cancelIntro()
+      setIntroTalking(false)
       clearError()
       onOpenChange(true)
       setMovement("walking")
-      setSpeech("silent")
       setInput("")
       discardStreamOnFinishRef.current = false
       pendingDraftRef.current = trimmedText
@@ -767,7 +925,6 @@ export function TorobCheckAssistant({
       onOpenChange,
       sendMessage,
       setMovement,
-      setSpeech,
     ]
   )
 
@@ -815,6 +972,7 @@ export function TorobCheckAssistant({
         >
           <TorobCheckCharacter
             className="size-[76px]"
+            gaze={open ? "up" : gaze}
             onReady={() => setCharacterReady(true)}
             onError={() => setCharacterError(true)}
           />
@@ -839,55 +997,63 @@ export function TorobCheckAssistant({
         dir="rtl"
         side="top"
         align="end"
+        showArrow
         collisionAvoidance={{ side: "none", fallbackAxisSide: "none" }}
         sideOffset={10}
         collisionPadding={12}
-        className="flex h-[min(26rem,calc(100dvh-5rem))] w-[min(22rem,calc(100vw-1.5rem))] max-w-[calc(100vw-1.5rem)] flex-col gap-0 overflow-hidden rounded-2xl border-border/70 bg-card/95 p-0 shadow-2xl shadow-black/20 backdrop-blur-xl"
+        className="flex h-[min(29rem,calc(100dvh-5rem))] w-[min(23rem,calc(100vw-1.5rem))] max-w-[calc(100vw-1.5rem)] flex-col gap-0 overflow-visible rounded-2xl border-border/70 bg-card/95 p-0 shadow-2xl ring-1 shadow-black/20 ring-border/50 backdrop-blur-xl"
       >
-        <PopoverHeader className="flex-row items-start gap-3 border-b border-border/60 px-3.5 py-3">
-          <Avatar size="sm" className="mt-0.5 bg-primary/10 text-primary">
-            <AvatarFallback className="bg-primary/10 text-primary">
+        <PopoverHeader className="flex-row items-center gap-3 border-b border-border/60 bg-muted/20 px-4 py-3">
+          <Avatar
+            size="default"
+            className="size-9 rounded-xl bg-primary/10 ring-1 ring-primary/10"
+          >
+            <AvatarFallback className="rounded-xl bg-primary/10 text-primary">
               <Bot aria-hidden="true" />
             </AvatarFallback>
           </Avatar>
           <div className="min-w-0 flex-1">
-            <PopoverTitle className="text-sm font-bold">ترب‌چک</PopoverTitle>
-            <PopoverDescription className="mt-0.5 text-xs leading-5">
+            <PopoverTitle className="text-sm font-semibold tracking-tight">
+              ترب‌چک
+            </PopoverTitle>
+            <PopoverDescription className="mt-0.5 text-xs">
               دستیار خرید حضوری تهران
             </PopoverDescription>
           </div>
-          {(messages.length > 1 || input.length > 0) && (
+          <div className="flex shrink-0 items-center gap-1">
+            {(messages.length > 1 || input.length > 0) && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                aria-label="پاک‌کردن گفت‌وگو و شروع دوباره"
+                title="پاک‌کردن گفت‌وگو"
+                onClick={clearConversation}
+                className="rounded-xl text-muted-foreground"
+              >
+                <Trash2 aria-hidden="true" />
+              </Button>
+            )}
             <Button
               type="button"
               variant="ghost"
               size="icon-sm"
-              aria-label="پاک‌کردن گفت‌وگو و شروع دوباره"
-              title="پاک‌کردن گفت‌وگو"
-              onClick={clearConversation}
-              className="-me-1 -mt-1 rounded-full text-muted-foreground"
+              aria-label="بستن گفت‌وگو"
+              onClick={() => handleOpenChange(false)}
+              className="rounded-xl text-muted-foreground"
             >
-              <Trash2 aria-hidden="true" />
+              <X aria-hidden="true" />
             </Button>
-          )}
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-sm"
-            aria-label="بستن گفت‌وگو"
-            onClick={() => handleOpenChange(false)}
-            className="-me-1 -mt-1 rounded-full text-muted-foreground"
-          >
-            <span aria-hidden="true">×</span>
-          </Button>
+          </div>
         </PopoverHeader>
 
         <MessageScrollerProvider autoScroll scrollPreviousItemPeek={28}>
-          <MessageScroller className="min-h-0 flex-1">
+          <MessageScroller className="min-h-0 flex-1 bg-background/20">
             <MessageScrollerViewport
               aria-label="گفت‌وگو با ترب‌چک"
               aria-live="polite"
             >
-              <MessageScrollerContent className="gap-3 p-3">
+              <MessageScrollerContent className="gap-4 px-4 py-4">
                 {messages.map((message) => {
                   if (message.role !== "assistant" && message.role !== "user") {
                     return null
@@ -907,25 +1073,25 @@ export function TorobCheckAssistant({
                         className="gap-2"
                       >
                         {isAssistant && (
-                          <MessageAvatar className="mb-0.5 w-7 min-w-7">
-                            <Avatar size="sm">
+                          <MessageAvatar className="mb-0.5 size-7 min-w-7">
+                            <Avatar size="default" className="size-7">
                               <AvatarFallback className="bg-primary/10 text-primary">
                                 <Bot aria-hidden="true" />
                               </AvatarFallback>
                             </Avatar>
                           </MessageAvatar>
                         )}
-                        <MessageContent className="gap-1.5">
-                          <MessageHeader className="px-2 text-[11px]">
+                        <MessageContent className="gap-1">
+                          <MessageHeader className="px-1 text-[10px] font-medium text-muted-foreground/80">
                             {isAssistant ? "ترب‌چک" : "شما"}
                           </MessageHeader>
                           {messageText && (
                             <Bubble
                               align={isAssistant ? "start" : "end"}
-                              variant={isAssistant ? "secondary" : "muted"}
-                              className="max-w-[92%]"
+                              variant={isAssistant ? "secondary" : "default"}
+                              className="max-w-[88%]"
                             >
-                              <BubbleContent className="border-border/40 px-3 py-2.5 text-[13px] leading-6 whitespace-pre-wrap">
+                              <BubbleContent className="border-transparent px-3.5 py-2.5 text-[13px] leading-6 whitespace-pre-wrap">
                                 {messageText}
                               </BubbleContent>
                             </Bubble>
@@ -992,50 +1158,54 @@ export function TorobCheckAssistant({
             </MessageScrollerViewport>
             <MessageScrollerButton
               aria-label="رفتن به تازه‌ترین پیام"
-              className="size-7"
+              className="size-8 border-border/60 bg-card shadow-sm"
             />
           </MessageScroller>
         </MessageScrollerProvider>
 
         {historyLoaded && messages.length === 1 && status === "ready" && (
-          <div className="flex flex-wrap gap-1.5 px-3 pb-2">
-            {quickPrompts.map((prompt) => (
-              <Button
-                key={prompt}
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => submitMessage(prompt)}
-                className="h-7 rounded-full px-2.5 text-[11px] font-normal"
-              >
-                {prompt}
-              </Button>
-            ))}
+          <div className="grid shrink-0 gap-2 border-t border-border/60 bg-muted/15 px-3 py-2.5">
+            <p className="flex items-center gap-1.5 px-1 text-[10px] font-medium text-muted-foreground">
+              <Sparkles aria-hidden="true" className="size-3" />
+              برای شروع یکی را انتخاب کن
+            </p>
+            <div className="grid grid-cols-2 gap-2">
+              {quickPrompts.map(({ label, icon: Icon }) => (
+                <Button
+                  key={label}
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => submitMessage(label)}
+                  className="h-auto min-h-10 justify-start rounded-xl border-border/60 bg-background/80 px-2.5 py-2 text-right text-[11px] leading-4 font-normal whitespace-normal shadow-none"
+                >
+                  <Icon data-icon="inline-start" aria-hidden="true" />
+                  {label}
+                </Button>
+              ))}
+            </div>
           </div>
         )}
 
-        {!historyLoaded && (
-          <div className="flex items-center gap-2 px-3 pb-2 text-xs text-muted-foreground">
+        {(!historyLoaded || status === "submitted") && (
+          <div
+            role="status"
+            className="flex shrink-0 items-center gap-2 border-t border-border/50 bg-muted/15 px-4 py-2.5 text-xs text-muted-foreground"
+          >
             <LoaderCircle
               aria-hidden="true"
               className="size-3.5 animate-spin"
             />
-            <span>در حال بازیابی گفت‌وگوی ذخیره‌شده</span>
-          </div>
-        )}
-
-        {status === "submitted" && (
-          <div className="flex items-center gap-2 px-3 pb-2 text-xs text-muted-foreground">
-            <LoaderCircle
-              aria-hidden="true"
-              className="size-3.5 animate-spin"
-            />
-            <span>دارم درخواستت را بررسی می‌کنم…</span>
+            <span>
+              {historyLoaded
+                ? "دارم درخواستت را بررسی می‌کنم…"
+                : "در حال بازیابی گفت‌وگوی ذخیره‌شده"}
+            </span>
           </div>
         )}
 
         {error && (
-          <Alert variant="destructive" className="mx-3 mb-2 w-auto">
+          <Alert variant="destructive" className="mx-3 mb-3 w-auto rounded-xl">
             <AlertCircle aria-hidden="true" />
             <AlertTitle className="text-xs">پاسخی دریافت نشد</AlertTitle>
             <AlertDescription className="flex items-center justify-between gap-2 text-xs">
@@ -1057,7 +1227,10 @@ export function TorobCheckAssistant({
           </Alert>
         )}
 
-        <form onSubmit={handleSubmit} className="px-3 pb-2.5">
+        <form
+          onSubmit={handleSubmit}
+          className="shrink-0 border-t border-border/60 bg-muted/15 px-3 py-3"
+        >
           <FieldGroup className="gap-0">
             <Field>
               <FieldLabel
@@ -1066,7 +1239,7 @@ export function TorobCheckAssistant({
               >
                 پیام شما
               </FieldLabel>
-              <InputGroup className="rounded-xl bg-background/70">
+              <InputGroup className="min-h-12 rounded-2xl bg-background shadow-sm">
                 <InputGroupTextarea
                   id="torobcheck-assistant-input"
                   dir="rtl"
@@ -1076,7 +1249,7 @@ export function TorobCheckAssistant({
                   onChange={(event) => setInput(event.target.value)}
                   onKeyDown={handleInputKeyDown}
                   placeholder="دنبال چه محصولی هستی؟"
-                  className="max-h-24 min-h-11 px-3 py-2 text-sm leading-5"
+                  className="max-h-28 min-h-12 px-3 py-3 text-sm leading-5"
                 />
                 <InputGroupAddon align="inline-end" className="self-end pb-1.5">
                   <InputGroupButton
@@ -1086,7 +1259,7 @@ export function TorobCheckAssistant({
                     disabled={!isBusy && (!historyLoaded || !input.trim())}
                     aria-label={isBusy ? "توقف پاسخ" : "ارسال پیام"}
                     onClick={isBusy ? stop : undefined}
-                    className="rounded-lg"
+                    className="size-8 rounded-xl"
                   >
                     {isBusy ? (
                       <Square aria-hidden="true" />

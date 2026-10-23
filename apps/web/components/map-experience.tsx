@@ -69,7 +69,7 @@ import type {
 
 const OPENFREEMAP_STYLE = "https://tiles.openfreemap.org/styles/fiord"
 const COMPACT_DRAWER_SNAP_POINT = "5.75rem"
-const DEFAULT_DRAWER_SNAP_POINT = 0.66
+const EXPANDED_DRAWER_SNAP_POINT = 0.66
 const SELECTED_SHOP_ZOOM = 18
 const SHOP_LIST_LOAD_AHEAD_PX = 240
 const SHOP_POPOVER_COLLISION_PADDING = {
@@ -80,7 +80,7 @@ const SHOP_POPOVER_COLLISION_PADDING = {
 }
 const DRAWER_SNAP_POINTS = [
   COMPACT_DRAWER_SNAP_POINT,
-  DEFAULT_DRAWER_SNAP_POINT,
+  EXPANDED_DRAWER_SNAP_POINT,
 ]
 const SHOP_SOURCE_ID = "torob-shops"
 const SHOP_POINT_LAYER_ID = "torob-shop-points"
@@ -392,7 +392,7 @@ export default function MapExperience() {
   } | null>(null)
   const [drawerSnapPoint, setDrawerSnapPoint] = useState<
     number | string | null
-  >(DEFAULT_DRAWER_SNAP_POINT)
+  >(COMPACT_DRAWER_SNAP_POINT)
   const [isDrawerOpen, setIsDrawerOpen] = useState(false)
   const [isAssistantOpen, setIsAssistantOpen] = useState(false)
 
@@ -1084,7 +1084,7 @@ export default function MapExperience() {
         locationPermissionDeniedRef.current = true
         clearUserLocation()
         setLocationError("دسترسی به موقعیت مکانی داده نشد.")
-        setDrawerSnapPoint(DEFAULT_DRAWER_SNAP_POINT)
+        setDrawerSnapPoint(EXPANDED_DRAWER_SNAP_POINT)
         return
       }
 
@@ -1146,7 +1146,7 @@ export default function MapExperience() {
     setSelectedShopId(null)
     setOpenShopPopoverId(null)
     setIsSearching(true)
-    setDrawerSnapPoint(DEFAULT_DRAWER_SNAP_POINT)
+    setDrawerSnapPoint(EXPANDED_DRAWER_SNAP_POINT)
 
     const result = await loadShops(map, searchTerm, withinMap, false)
     setIsSearching(false)
@@ -1183,7 +1183,7 @@ export default function MapExperience() {
         padding: {
           top: 88,
           bottom:
-            Math.round(window.innerHeight * DEFAULT_DRAWER_SNAP_POINT) + 16,
+            Math.round(window.innerHeight * EXPANDED_DRAWER_SNAP_POINT) + 16,
           left: 24,
           right: 24,
         },
@@ -1259,7 +1259,7 @@ export default function MapExperience() {
 
     if (!navigator.geolocation) {
       setLocationError("موقعیت‌یابی در این مرورگر پشتیبانی نمی‌شود.")
-      setDrawerSnapPoint(DEFAULT_DRAWER_SNAP_POINT)
+      setDrawerSnapPoint(EXPANDED_DRAWER_SNAP_POINT)
       return
     }
 
@@ -1291,7 +1291,7 @@ export default function MapExperience() {
             },
           ],
         })
-        setDrawerSnapPoint(DEFAULT_DRAWER_SNAP_POINT)
+        setDrawerSnapPoint(EXPANDED_DRAWER_SNAP_POINT)
         map.flyTo({
           center: [coords.longitude, coords.latitude],
           zoom: 15,
@@ -1311,7 +1311,7 @@ export default function MapExperience() {
             "دریافت موقعیت مکانی بیش از حد طول کشید. دوباره تلاش کنید."
           )
         }
-        setDrawerSnapPoint(DEFAULT_DRAWER_SNAP_POINT)
+        setDrawerSnapPoint(EXPANDED_DRAWER_SNAP_POINT)
       },
       { enableHighAccuracy: false, maximumAge: 60_000, timeout: 12_000 }
     )
@@ -1329,7 +1329,7 @@ export default function MapExperience() {
 
   const advanceDrawerSnapPoint = () => {
     handleDrawerSnapPointChange(
-      isCompactDrawer ? DEFAULT_DRAWER_SNAP_POINT : COMPACT_DRAWER_SNAP_POINT
+      isCompactDrawer ? EXPANDED_DRAWER_SNAP_POINT : COMPACT_DRAWER_SNAP_POINT
     )
   }
 
@@ -1374,6 +1374,7 @@ export default function MapExperience() {
         <TorobCheckAssistant
           location={userLocation}
           mapContext={assistantMapContext}
+          gaze={isDrawerOpen && !isCompactDrawer ? "down" : "forward"}
           open={isAssistantOpen}
           onOpenChange={handleAssistantOpenChange}
           onSelectOffer={selectAssistantOffer}

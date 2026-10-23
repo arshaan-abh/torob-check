@@ -52,7 +52,11 @@ const ANIMATION = {
   walking: "Walking",
   blinking: "Blink",
   talking: "Talk",
+  lookingUp: "Look Up",
+  lookingDown: "Look Down",
 } as const
+
+export type TorobCheckGaze = "forward" | "up" | "down"
 
 const subscribeToReducedMotion = (onChange: () => void) => {
   const mediaQuery = window.matchMedia(REDUCED_MOTION_QUERY)
@@ -67,7 +71,11 @@ const getReducedMotionSnapshot = () =>
 const getReducedMotionServerSnapshot = () => false
 
 type PlaybackController = {
-  update: (state: TorobCheckState, prefersReducedMotion: boolean) => void
+  update: (
+    state: TorobCheckState,
+    prefersReducedMotion: boolean,
+    gaze: TorobCheckGaze
+  ) => void
 }
 
 type ActiveAnimation = {
@@ -159,8 +167,15 @@ const resizeCanvas = (resources: RiveResources) => {
 const updatePlayback = (
   resources: RiveResources,
   state: TorobCheckState,
-  prefersReducedMotion: boolean
+  prefersReducedMotion: boolean,
+  gaze: TorobCheckGaze
 ) => {
+  const gazeAnimation =
+    gaze === "up"
+      ? ANIMATION.lookingUp
+      : gaze === "down"
+        ? ANIMATION.lookingDown
+        : undefined
   const previouslyActive = new Set(
     resources.activeAnimations.map(({ name }) => name)
   )
@@ -176,8 +191,46 @@ const updatePlayback = (
         ...(state.speech === "talking"
           ? [{ name: ANIMATION.talking, mix: 0.7 }]
           : []),
-        { name: ANIMATION.blinking, mix: 1 },
+        // Blink and gaze animations transform the same eye pixels, so don't blend them.
+        ...(gaze === "forward" ? [{ name: ANIMATION.blinking, mix: 1 }] : []),
+        ...(gazeAnimation ? [{ name: gazeAnimation, mix: 1 }] : []),
       ]
+
+  // Rive keeps the last applied Talk pose on the artboard after it is removed.
+  if (previouslyActive.has(ANIMATION.talking) && state.speech !== "talking") {
+    const talkingAnimation = resources.animations.get(ANIMATION.talking)
+    if (talkingAnimation) {
+      talkingAnimation.time = 0
+      talkingAnimation.advance(0)
+      talkingAnimation.apply(1)
+    }
+  }
+
+  const activeAnimationNames = new Set(
+    resources.activeAnimations.map(({ name }) => name)
+  )
+  for (const name of [ANIMATION.lookingUp, ANIMATION.lookingDown]) {
+    if (previouslyActive.has(name) && !activeAnimationNames.has(name)) {
+      const gazeAnimation = resources.animations.get(name)
+      if (gazeAnimation) {
+        gazeAnimation.time = 0
+        gazeAnimation.advance(0)
+        gazeAnimation.apply(1)
+      }
+    }
+  }
+
+  const blinkingIsActive = resources.activeAnimations.some(
+    ({ name }) => name === ANIMATION.blinking
+  )
+  if (previouslyActive.has(ANIMATION.blinking) && !blinkingIsActive) {
+    const blinkingAnimation = resources.animations.get(ANIMATION.blinking)
+    if (blinkingAnimation) {
+      blinkingAnimation.time = 0
+      blinkingAnimation.advance(0)
+      blinkingAnimation.apply(1)
+    }
+  }
 
   for (const { name } of resources.activeAnimations) {
     if (previouslyActive.has(name)) continue
@@ -233,6 +286,8 @@ export type TorobCheckCharacterProps = {
   /** Width and height, in pixels, of the Rive canvas. */
   size?: number
   label?: string
+  /** Direction of the character's gaze. */
+  gaze?: TorobCheckGaze
   onReady?: () => void
   onError?: () => void
 }
@@ -242,6 +297,7 @@ export function TorobCheckCharacter({
   style,
   size = 76,
   label = "تربچِک، دستیار خرید حضوری",
+  gaze = "forward",
   onReady,
   onError,
 }: TorobCheckCharacterProps) {
@@ -251,6 +307,7 @@ export function TorobCheckCharacter({
   const onReadyRef = useRef(onReady)
   const onErrorRef = useRef(onError)
   const playbackStateRef = useRef(state)
+  const gazeRef = useRef(gaze)
   const prefersReducedMotion = useSyncExternalStore(
     subscribeToReducedMotion,
     getReducedMotionSnapshot,
@@ -262,6 +319,7 @@ export function TorobCheckCharacter({
   )
 
   playbackStateRef.current = state
+  gazeRef.current = gaze
   reducedMotionRef.current = prefersReducedMotion
   onReadyRef.current = onReady
   onErrorRef.current = onError
@@ -365,15 +423,16 @@ export function TorobCheckCharacter({
         }
 
         playbackControllerRef.current = {
-          update: (nextState, reduceMotion) =>
-            updatePlayback(resources!, nextState, reduceMotion),
+          update: (nextState, reduceMotion, nextGaze) =>
+            updatePlayback(resources!, nextState, reduceMotion, nextGaze),
         }
         resizeObserver.observe(canvas)
         resizeCanvas(resources)
         updatePlayback(
           resources,
           playbackStateRef.current,
-          reducedMotionRef.current
+          reducedMotionRef.current,
+          gazeRef.current
         )
         setLoadState("ready")
         onReadyRef.current?.()
@@ -396,8 +455,8 @@ export function TorobCheckCharacter({
   }, [])
 
   useEffect(() => {
-    playbackControllerRef.current?.update(state, prefersReducedMotion)
-  }, [prefersReducedMotion, state])
+    playbackControllerRef.current?.update(state, prefersReducedMotion, gaze)
+  }, [gaze, prefersReducedMotion, state])
 
   return (
     <figure
