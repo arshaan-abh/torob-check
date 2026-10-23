@@ -32,12 +32,14 @@ import {
   PopoverTrigger,
 } from "@workspace/ui/components/popover"
 import { ScrollArea } from "@workspace/ui/components/scroll-area"
+import { Skeleton } from "@workspace/ui/components/skeleton"
 import { Separator } from "@workspace/ui/components/separator"
 import {
   Drawer,
   DrawerContent,
   DrawerDescription,
   DrawerHeader,
+  DrawerSwipeRegion,
   DrawerTitle,
   DrawerVirtualKeyboardProvider,
 } from "@workspace/ui/components/drawer"
@@ -48,6 +50,12 @@ const OPENFREEMAP_STYLE = "https://tiles.openfreemap.org/styles/fiord"
 const COMPACT_DRAWER_SNAP_POINT = "6.25rem"
 const DEFAULT_DRAWER_SNAP_POINT = 0.66
 const SELECTED_SHOP_ZOOM = 18
+const SHOP_POPOVER_COLLISION_PADDING = {
+  top: 70,
+  right: 12,
+  bottom: 92,
+  left: 12,
+}
 const DRAWER_SNAP_POINTS = [
   COMPACT_DRAWER_SNAP_POINT,
   DEFAULT_DRAWER_SNAP_POINT,
@@ -120,16 +128,47 @@ function formatShopCount(total: number, truncated: boolean) {
   return truncated ? `بیش از ${count} فروشگاه` : `${count} فروشگاه`
 }
 
+function ShopListSkeleton() {
+  return (
+    <div
+      role="status"
+      aria-label="در حال بارگذاری فروشگاه‌ها"
+      className="flex flex-col gap-2"
+    >
+      {Array.from({ length: 5 }, (_, index) => (
+        <div
+          key={`shop-skeleton-${index}`}
+          aria-hidden="true"
+          className="flex items-start gap-3 rounded-2xl border border-border/60 bg-background/40 p-3"
+        >
+          <Skeleton className="size-10 shrink-0 rounded-xl" />
+          <div className="flex min-w-0 flex-1 flex-col gap-2">
+            <Skeleton className="h-4 w-2/3 rounded-md" />
+            <Skeleton className="h-3 w-1/2 rounded-md" />
+            <div className="mt-1 flex gap-1.5">
+              <Skeleton className="h-5 w-16 rounded-full" />
+              <Skeleton className="h-5 w-24 rounded-full" />
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 function ShopDetailPopover({
   map,
   shop,
+  open,
+  onOpenChange,
   onClose,
 }: {
   map: MapLibreMap
   shop: Shop
+  open: boolean
+  onOpenChange: (open: boolean) => void
   onClose: () => void
 }) {
-  const [isOpen, setIsOpen] = useState(true)
   const [anchorPosition, setAnchorPosition] = useState<ShopMapPosition>(() => {
     const point = map.project([shop.lon, shop.lat])
     return { x: point.x, y: point.y }
@@ -156,9 +195,9 @@ function ShopDetailPopover({
 
   return (
     <Popover
-      open={isOpen}
+      open={open}
       modal={false}
-      onOpenChange={setIsOpen}
+      onOpenChange={onOpenChange}
       onOpenChangeComplete={(open) => {
         if (!open) onClose()
       }}
@@ -173,6 +212,7 @@ function ShopDetailPopover({
         showArrow
         side="top"
         sideOffset={12}
+        collisionPadding={SHOP_POPOVER_COLLISION_PADDING}
         className="w-auto gap-0 overflow-visible bg-transparent p-0 shadow-none ring-0"
       >
         <Card
@@ -200,7 +240,7 @@ function ShopDetailPopover({
                 variant="ghost"
                 size="icon-sm"
                 aria-label="بستن جزئیات فروشگاه"
-                onClick={() => setIsOpen(false)}
+                onClick={() => onOpenChange(false)}
                 className="size-8 rounded-full text-muted-foreground"
               >
                 <X aria-hidden="true" />
@@ -238,9 +278,9 @@ function ShopDetailPopover({
               <p className="text-[10px] leading-4 text-muted-foreground">
                 کمترین قیمت
               </p>
-              <p className="mt-1 truncate text-xs font-semibold text-primary">
+              <Badge className="mt-1 max-w-full px-1.5 text-xs font-semibold">
                 {formatPrice(shop.lowestPrice) || "ثبت نشده"}
-              </p>
+              </Badge>
             </div>
           </CardContent>
         </Card>
@@ -269,6 +309,9 @@ export default function MapExperience() {
     "loading"
   )
   const [selectedShopId, setSelectedShopId] = useState<string | null>(null)
+  const [openShopPopoverId, setOpenShopPopoverId] = useState<string | null>(
+    null
+  )
   const [query, setQuery] = useState("")
   const [isSearching, setIsSearching] = useState(false)
   const [searchError, setSearchError] = useState<string | null>(null)
@@ -369,6 +412,7 @@ export default function MapExperience() {
   const selectShop = useCallback((shop: Shop) => {
     const map = mapRef.current
     setSelectedShopId(shop.shopId)
+    setOpenShopPopoverId(shop.shopId)
     setDrawerSnapPoint(COMPACT_DRAWER_SNAP_POINT)
     map?.flyTo({
       center: [shop.lon, shop.lat],
@@ -378,6 +422,9 @@ export default function MapExperience() {
   }, [])
 
   const clearSelectedShop = useCallback((shopId: string) => {
+    setOpenShopPopoverId((currentShopId) =>
+      currentShopId === shopId ? null : currentShopId
+    )
     setSelectedShopId((currentShopId) =>
       currentShopId === shopId ? null : currentShopId
     )
@@ -680,6 +727,7 @@ export default function MapExperience() {
 
     activeSearchRef.current = searchTerm
     setSelectedShopId(null)
+    setOpenShopPopoverId(null)
     setIsSearching(true)
     setDrawerSnapPoint(DEFAULT_DRAWER_SNAP_POINT)
 
@@ -731,6 +779,7 @@ export default function MapExperience() {
   const clearSearch = () => {
     setQuery("")
     setSelectedShopId(null)
+    setOpenShopPopoverId(null)
     activeSearchRef.current = ""
 
     const map = mapRef.current
@@ -911,62 +960,76 @@ export default function MapExperience() {
           <DrawerContent
             className="torob-map-drawer max-h-none rounded-t-3xl border-border/70 bg-card/95 shadow-2xl shadow-black/20 backdrop-blur-xl **:data-[slot=drawer-content]:overflow-visible"
             initialFocus={false}
+            onPointerDownCapture={(event) => {
+              if (
+                selectedShopId &&
+                event.target instanceof Element &&
+                event.target.closest(
+                  '[data-slot="drawer-swipe-handle"], [data-slot="drawer-swipe-region"]'
+                )
+              ) {
+                setOpenShopPopoverId(null)
+              }
+            }}
           >
-            <DrawerHeader className="gap-0 px-4 pt-1 pb-3 text-right sm:px-6">
-              <div className="flex items-center justify-between gap-3">
-                <div className="flex min-w-0 items-center gap-3">
-                  <span className="grid size-10 shrink-0 place-items-center rounded-2xl bg-primary/10 text-primary">
-                    <Store aria-hidden="true" />
-                  </span>
-                  <div className="min-w-0 text-right">
-                    <DrawerTitle className="truncate text-base font-bold">
-                      فروشگاه‌های این محدوده
-                    </DrawerTitle>
-                    <p className="mt-1 truncate text-xs text-muted-foreground">
-                      تربِ حضوری / {shopCountLabel}
-                    </p>
+            <DrawerSwipeRegion className="h-20">
+              <DrawerHeader className="h-full gap-0 px-4 pt-1 pb-3 text-right sm:px-6">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <span className="grid size-10 shrink-0 place-items-center rounded-2xl bg-primary/10 text-primary">
+                      <Store aria-hidden="true" />
+                    </span>
+                    <div className="min-w-0 text-right">
+                      <DrawerTitle className="truncate text-base font-bold">
+                        فروشگاه‌های این محدوده
+                      </DrawerTitle>
+                      <p className="mt-1 truncate text-xs text-muted-foreground">
+                        تربِ حضوری / {shopCountLabel}
+                      </p>
+                    </div>
                   </div>
-                </div>
 
-                <Badge
-                  variant="outline"
-                  className="ms-auto hidden gap-1.5 font-normal sm:inline-flex"
-                >
-                  <span
-                    className={cn(
-                      "size-1.5 rounded-full",
-                      mapStatus === "ready"
-                        ? "bg-chart-2"
-                        : mapStatus === "error"
-                          ? "bg-destructive"
-                          : "animate-pulse bg-muted-foreground"
+                  <Badge
+                    variant="outline"
+                    className="ms-auto hidden gap-1.5 font-normal sm:inline-flex"
+                  >
+                    <span
+                      className={cn(
+                        "size-1.5 rounded-full",
+                        mapStatus === "ready"
+                          ? "bg-chart-2"
+                          : mapStatus === "error"
+                            ? "bg-destructive"
+                            : "animate-pulse bg-muted-foreground"
+                      )}
+                    />
+                    {mapStatusLabel}
+                  </Badge>
+
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-lg"
+                    data-base-ui-swipe-ignore
+                    aria-label={drawerExpandLabel}
+                    title={drawerExpandLabel}
+                    onClick={advanceDrawerSnapPoint}
+                    className="shrink-0 rounded-xl"
+                  >
+                    {isCompactDrawer ? (
+                      <ChevronUp aria-hidden="true" />
+                    ) : (
+                      <ChevronDown aria-hidden="true" />
                     )}
-                  />
-                  {mapStatusLabel}
-                </Badge>
-
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-lg"
-                  aria-label={drawerExpandLabel}
-                  title={drawerExpandLabel}
-                  onClick={advanceDrawerSnapPoint}
-                  className="shrink-0 rounded-xl"
-                >
-                  {isCompactDrawer ? (
-                    <ChevronUp aria-hidden="true" />
-                  ) : (
-                    <ChevronDown aria-hidden="true" />
-                  )}
-                </Button>
-              </div>
-              <DrawerDescription className="mt-1 text-right text-xs">
-                {isCompactDrawer
-                  ? "برای جستجو و دیدن فروشگاه‌ها، به بالا بکشید"
-                  : "برای کوچک‌کردن فهرست، دسته را به پایین بکشید"}
-              </DrawerDescription>
-            </DrawerHeader>
+                  </Button>
+                </div>
+                <DrawerDescription className="mt-1 text-right text-xs">
+                  {isCompactDrawer
+                    ? "برای جستجو و دیدن فروشگاه‌ها، به بالا بکشید"
+                    : "برای کوچک‌کردن فهرست، دسته را به پایین بکشید"}
+                </DrawerDescription>
+              </DrawerHeader>
+            </DrawerSwipeRegion>
 
             <div className="flex min-h-0 flex-1 flex-col">
               <form
@@ -1047,7 +1110,9 @@ export default function MapExperience() {
               )}
 
               <ScrollArea className="min-h-0 flex-1 px-4 **:data-[slot=scroll-area-viewport]:py-4 sm:px-6">
-                {shopsStatus === "error" ? (
+                {shopsStatus === "loading" ? (
+                  <ShopListSkeleton />
+                ) : shopsStatus === "error" ? (
                   <div className="rounded-2xl bg-muted/70 px-4 py-5 text-center text-sm leading-6 text-muted-foreground">
                     اطلاعات فروشگاه‌ها بارگذاری نشد. مطمئن شوید دیتابیس آماده و
                     داده‌ها وارد شده‌اند.
@@ -1131,6 +1196,15 @@ export default function MapExperience() {
           key={selectedShop.shopId}
           map={mapRef.current}
           shop={selectedShop}
+          open={openShopPopoverId === selectedShop.shopId}
+          onOpenChange={(open) => {
+            setOpenShopPopoverId((currentShopId) => {
+              if (open) return selectedShop.shopId
+              return currentShopId === selectedShop.shopId
+                ? null
+                : currentShopId
+            })
+          }}
           onClose={() => clearSelectedShop(selectedShop.shopId)}
         />
       ) : null}

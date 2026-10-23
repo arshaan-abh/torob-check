@@ -16,6 +16,7 @@ function PopoverContent({
   className,
   align = "center",
   alignOffset = 0,
+  collisionPadding,
   side = "bottom",
   sideOffset = 4,
   showArrow = false,
@@ -24,13 +25,14 @@ function PopoverContent({
 }: PopoverPrimitive.Popup.Props &
   Pick<
     PopoverPrimitive.Positioner.Props,
-    "align" | "alignOffset" | "side" | "sideOffset"
+    "align" | "alignOffset" | "collisionPadding" | "side" | "sideOffset"
   > & { showArrow?: boolean }) {
   return (
     <PopoverPrimitive.Portal>
       <PopoverPrimitive.Positioner
         align={align}
         alignOffset={alignOffset}
+        collisionPadding={collisionPadding}
         side={side}
         sideOffset={sideOffset}
         className="isolate z-50"
@@ -44,7 +46,7 @@ function PopoverContent({
           {...props}
         >
           {showArrow && (
-            <PopoverPrimitive.Arrow className="absolute size-3 rotate-45 rounded-[2px] border border-border/70 bg-popover data-[side=bottom]:-top-1.5 data-[side=left]:-right-1.5 data-[side=right]:-left-1.5 data-[side=top]:-bottom-1.5" />
+            <PopoverPrimitive.Arrow className="absolute size-3 rotate-45 rounded-xs border border-border/70 bg-popover data-[side=bottom]:-top-1.5 data-[side=left]:-right-1.5 data-[side=right]:-left-1.5 data-[side=top]:-bottom-1.5" />
           )}
           {children}
         </PopoverPrimitive.Popup>

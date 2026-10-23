@@ -17,7 +17,7 @@
 .torob-map-drawer {
   --torob-drawer-visible-content-height: calc(
     100dvh - var(--drawer-snap-point-offset, 0px) -
-      var(--drawer-swipe-movement-y, 0px) - 0.75rem - 1px
+      var(--drawer-swipe-movement-y, 0px) - 5rem - 0.75rem - 1px
   );
 }
 

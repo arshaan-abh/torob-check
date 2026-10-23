@@ -65,6 +65,25 @@ function DrawerClose({ ...props }: DrawerPrimitive.Close.Props) {
   return <DrawerPrimitive.Close data-slot="drawer-close" {...props} />
 }
 
+function DrawerSwipeRegion({
+  className,
+  children,
+  ...props
+}: React.ComponentProps<"div">) {
+  return (
+    <div
+      data-slot="drawer-swipe-region"
+      className={cn(
+        "relative z-10 flex shrink-0 cursor-grab flex-col active:cursor-grabbing",
+        className
+      )}
+      {...props}
+    >
+      {children}
+    </div>
+  )
+}
+
 function DrawerOverlay({
   className,
   ...props
@@ -106,6 +125,13 @@ function DrawerContent({
   const { hasSnapPoints, modal, showSwipeHandle, swipeDirection } = useDrawer()
   const swipeAxis =
     swipeDirection === "down" || swipeDirection === "up" ? "y" : "x"
+  const childArray = React.Children.toArray(children)
+  const swipeRegions = childArray.filter(
+    (child) => React.isValidElement(child) && child.type === DrawerSwipeRegion
+  )
+  const contentChildren = childArray.filter(
+    (child) => !React.isValidElement(child) || child.type !== DrawerSwipeRegion
+  )
 
   return (
     <DrawerPortal data-slot="drawer-portal">
@@ -151,13 +177,14 @@ function DrawerContent({
           {...props}
         >
           {showSwipeHandle && <DrawerSwipeHandle />}
+          {swipeRegions}
           <DrawerPrimitive.Content
             data-slot="drawer-content"
             className={cn(
               "flex min-h-0 flex-1 flex-col overflow-hidden overscroll-contain rounded-[inherit] transition-opacity duration-300 ease-[cubic-bezier(0.45,1.005,0,1.005)] select-text group-data-nested-drawer-open/drawer-popup:opacity-0 group-data-nested-drawer-swiping/drawer-popup:opacity-100 group-data-swiping/drawer-popup:select-none"
             )}
           >
-            {children}
+            {contentChildren}
           </DrawerPrimitive.Content>
         </DrawerPrimitive.Popup>
       </DrawerPrimitive.Viewport>
@@ -222,6 +249,7 @@ export {
   DrawerSwipeHandle,
   DrawerTrigger,
   DrawerClose,
+  DrawerSwipeRegion,
   DrawerContent,
   DrawerHeader,
   DrawerFooter,
