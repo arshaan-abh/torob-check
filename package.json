@@ -13,7 +13,9 @@
     "db:generate": "pnpm --filter @workspace/db db:generate",
     "db:migrate": "pnpm --filter @workspace/db db:migrate",
     "db:studio": "pnpm --filter @workspace/db db:studio",
-    "db:import": "pnpm --filter @workspace/db db:import"
+    "db:import": "pnpm --filter @workspace/db db:import",
+    "worker:dev": "pnpm --filter @workspace/worker dev",
+    "worker:start": "pnpm --filter @workspace/worker start"
   },
   "devDependencies": {
     "@workspace/eslint-config": "workspace:*",

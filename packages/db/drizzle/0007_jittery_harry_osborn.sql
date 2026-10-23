@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "research_observations_source_url_observed_idx" ON "research_observations" USING btree ("source_id","url","observed_at");

@@ -9,6 +9,7 @@ import {
   ChevronUp,
   LocateFixed,
   MapPin,
+  MessageCircle,
   Minus,
   Plus,
   Search,
@@ -60,6 +61,8 @@ import {
 } from "@workspace/ui/components/drawer"
 import { cn } from "@workspace/ui/lib/utils"
 import { TorobCheckCharacter } from "@/app/components/torob-check-character"
+import { ShoppingAssistantPanel } from "@/components/shopping-assistant-panel"
+import type { ShoppingAssistantMapContext } from "@/components/shopping-assistant-panel"
 
 const OPENFREEMAP_STYLE = "https://tiles.openfreemap.org/styles/fiord"
 const COMPACT_DRAWER_SNAP_POINT = "6.25rem"
@@ -362,6 +365,16 @@ export default function MapExperience() {
   const [mapStatus, setMapStatus] = useState<"loading" | "ready" | "error">(
     "loading"
   )
+  const [assistantOpen, setAssistantOpen] = useState(false)
+  const [assistantMapContext, setAssistantMapContext] =
+    useState<ShoppingAssistantMapContext>({})
+  const updateAssistantMapContext = useCallback((map: MapLibreMap) => {
+    const center = map.getCenter()
+    setAssistantMapContext({
+      bounds: getShopBounds(map),
+      center: { lat: center.lat, lon: center.lng },
+    })
+  }, [])
   const [selectedShopId, setSelectedShopId] = useState<string | null>(null)
   const [openShopPopoverId, setOpenShopPopoverId] = useState<string | null>(
     null
@@ -797,6 +810,7 @@ export default function MapExperience() {
           if (!activeMap || disposed) return
 
           loaded = true
+          updateAssistantMapContext(activeMap)
           const firstSymbolLayerId = activeMap
             .getStyle()
             .layers?.find((layer) => layer.type === "symbol")?.id
@@ -947,6 +961,7 @@ export default function MapExperience() {
           })
 
           activeMap.on("moveend", () => {
+            updateAssistantMapContext(activeMap!)
             if (Date.now() < suppressShopSelectionMoveEndsUntilRef.current) {
               if (shopListScopeRef.current === "visible") {
                 void loadShopList(
@@ -1001,7 +1016,7 @@ export default function MapExperience() {
       activeMap?.remove()
       mapRef.current = null
     }
-  }, [loadShopList, loadShops, selectShop])
+  }, [loadShopList, loadShops, selectShop, updateAssistantMapContext])
 
   useEffect(() => {
     if (!navigator.permissions?.query) return
@@ -1307,8 +1322,40 @@ export default function MapExperience() {
         data-drawer-snap={isCompactDrawer ? "peek" : "default"}
         className="torob-map-overlay absolute right-3 z-10"
       >
-        <TorobCheckCharacter className="size-[76px]" />
+        <button
+          type="button"
+          aria-label={
+            assistantOpen
+              ? "دستیار خرید باز است"
+              : "باز کردن دستیار خرید با ترب‌چک"
+          }
+          aria-expanded={assistantOpen}
+          onClick={() => {
+            if (assistantOpen) return
+            setAssistantOpen(true)
+            setIsDrawerOpen(false)
+          }}
+          className="group relative flex items-center rounded-full border border-border/70 bg-card/95 p-1 shadow-lg shadow-black/15 transition-transform duration-200 hover:scale-[1.03] focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+        >
+          <TorobCheckCharacter className="size-[76px]" />
+          <span
+            className="absolute -top-1 -left-1 grid size-8 place-items-center rounded-full bg-primary text-primary-foreground shadow-md shadow-black/15"
+            aria-hidden="true"
+          >
+            <MessageCircle className="size-4" />
+          </span>
+        </button>
       </div>
+
+      {assistantOpen && (
+        <ShoppingAssistantPanel
+          mapContext={assistantMapContext}
+          onClose={() => {
+            setAssistantOpen(false)
+            setIsDrawerOpen(true)
+          }}
+        />
+      )}
 
       <div
         role="group"

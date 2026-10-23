@@ -15,5 +15,19 @@ services:
       timeout: 5s
       retries: 10
 
+  worker:
+    profiles: ["worker"]
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql://torob:torob_dev@postgres:5432/torob
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
 volumes:
   torob-postgres-data:
