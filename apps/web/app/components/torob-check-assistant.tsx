@@ -36,6 +36,11 @@ import {
   CardTitle,
 } from "@workspace/ui/components/card"
 import {
+  Carousel,
+  CarouselContent,
+  CarouselItem,
+} from "@workspace/ui/components/carousel"
+import {
   Empty,
   EmptyDescription,
   EmptyHeader,
@@ -209,6 +214,10 @@ const welcomeMessage: AssistantMessage = {
 const quickPrompts = [
   { label: "یک فشارسنج مناسب پیدا کن", icon: Search },
   { label: "فروشگاه‌های نزدیکم را مقایسه کن", icon: MapPin },
+  { label: "ارزان‌ترین گوشی شیائومی را پیدا کن", icon: Search },
+  { label: "یک لپ‌تاپ برای کار دانشجویی پیدا کن", icon: Search },
+  { label: "جاروبرقی‌های نزدیکم را مقایسه کن", icon: MapPin },
+  { label: "هدفون بلوتوثی تا ۲ میلیون پیدا کن", icon: Search },
 ]
 
 function getMessageText(message: AssistantMessage) {
@@ -1001,7 +1010,7 @@ export function TorobCheckAssistant({
         collisionAvoidance={{ side: "none", fallbackAxisSide: "none" }}
         sideOffset={10}
         collisionPadding={12}
-        className="flex h-[min(29rem,calc(100dvh-5rem))] w-[min(23rem,calc(100vw-1.5rem))] max-w-[calc(100vw-1.5rem)] flex-col gap-0 overflow-visible rounded-2xl border-border/70 bg-card/95 p-0 shadow-2xl ring-1 shadow-black/20 ring-border/50 backdrop-blur-xl"
+        className="flex h-[min(29rem,calc(100dvh-5rem))] w-[min(23rem,calc(100vw-1.5rem))] max-w-[calc(100vw-1.5rem)] flex-col gap-0 overflow-visible rounded-[2.3125rem] border-border/70 bg-card/95 p-0 shadow-2xl ring-1 shadow-black/20 ring-border/50 backdrop-blur-xl"
       >
         <PopoverHeader className="flex-row items-center gap-3 border-b border-border/60 bg-muted/20 px-4 py-3">
           <Avatar
@@ -1164,26 +1173,34 @@ export function TorobCheckAssistant({
         </MessageScrollerProvider>
 
         {historyLoaded && messages.length === 1 && status === "ready" && (
-          <div className="grid shrink-0 gap-2 border-t border-border/60 bg-muted/15 px-3 py-2.5">
-            <p className="flex items-center gap-1.5 px-1 text-[10px] font-medium text-muted-foreground">
+          <div className="grid shrink-0 gap-2 border-t border-border/60 bg-muted/15 py-2.5">
+            <p className="mx-3 flex items-center gap-1.5 px-1 text-[10px] font-medium text-muted-foreground">
               <Sparkles aria-hidden="true" className="size-3" />
               برای شروع یکی را انتخاب کن
             </p>
-            <div className="grid grid-cols-2 gap-2">
-              {quickPrompts.map(({ label, icon: Icon }) => (
-                <Button
-                  key={label}
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => submitMessage(label)}
-                  className="h-auto min-h-10 justify-start rounded-xl border-border/60 bg-background/80 px-2.5 py-2 text-right text-[11px] leading-4 font-normal whitespace-normal shadow-none"
-                >
-                  <Icon data-icon="inline-start" aria-hidden="true" />
-                  {label}
-                </Button>
-              ))}
-            </div>
+            <Carousel
+              aria-label="پیشنهادهای شروع گفت‌وگو"
+              dir="rtl"
+              opts={{ align: "start", direction: "rtl", dragFree: true }}
+              className="min-w-0"
+            >
+              <CarouselContent className="ms-0 gap-2 *:first:mr-3 *:last:ml-3">
+                {quickPrompts.map(({ label, icon: Icon }) => (
+                  <CarouselItem key={label} className="basis-auto ps-0">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => submitMessage(label)}
+                      className="h-9 w-max shrink-0 justify-start rounded-xl border-border/60 bg-background/80 px-3 text-right text-[11px] leading-4 font-normal whitespace-nowrap shadow-none"
+                    >
+                      <Icon data-icon="inline-start" aria-hidden="true" />
+                      {label}
+                    </Button>
+                  </CarouselItem>
+                ))}
+              </CarouselContent>
+            </Carousel>
           </div>
         )}
 
@@ -1205,7 +1222,7 @@ export function TorobCheckAssistant({
         )}
 
         {error && (
-          <Alert variant="destructive" className="mx-3 mb-3 w-auto rounded-xl">
+          <Alert variant="destructive" className="m-3 w-auto rounded-xl">
             <AlertCircle aria-hidden="true" />
             <AlertTitle className="text-xs">پاسخی دریافت نشد</AlertTitle>
             <AlertDescription className="flex items-center justify-between gap-2 text-xs">
@@ -1251,7 +1268,7 @@ export function TorobCheckAssistant({
                   placeholder="دنبال چه محصولی هستی؟"
                   className="max-h-28 min-h-12 px-3 py-3 text-sm leading-5"
                 />
-                <InputGroupAddon align="inline-end" className="self-end pb-1.5">
+                <InputGroupAddon align="block-end" className="justify-end p-2">
                   <InputGroupButton
                     type={isBusy ? "button" : "submit"}
                     variant={isBusy ? "secondary" : "default"}

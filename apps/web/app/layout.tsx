@@ -15,6 +15,8 @@ const fontVazirmatn = Vazirmatn({
   variable: "--font-vazirmatn",
 })
 
+export const metadata = { title: "Torob Check" }
+
 export default function RootLayout({
   children,
 }: Readonly<{
