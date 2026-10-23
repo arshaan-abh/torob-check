@@ -4,6 +4,10 @@ import { betterAuth } from "better-auth"
 import { getDb } from "@workspace/db"
 import { account, session, user, verification } from "@workspace/db/schema"
 import { sendAuthLink } from "@/lib/auth-mailer"
+import {
+  claimBootstrapAdminOnSignup,
+  isBootstrapSystemAdmin,
+} from "@/lib/system-admin"
 
 function createAuth() {
   return betterAuth({
@@ -27,9 +31,20 @@ function createAuth() {
     },
     emailVerification: {
       sendOnSignUp: true,
+      sendOnSignIn: true,
       autoSignInAfterVerification: false,
       sendVerificationEmail: async ({ user: accountUser, url }) => {
+        if (await isBootstrapSystemAdmin(accountUser.id)) return
         await sendAuthLink(accountUser.email, url, "تأیید ایمیل ترب‌چک")
+      },
+    },
+    databaseHooks: {
+      user: {
+        create: {
+          after: async (createdUser) => {
+            await claimBootstrapAdminOnSignup(createdUser.id, createdUser.email)
+          },
+        },
       },
     },
   })

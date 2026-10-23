@@ -12,7 +12,7 @@ import {
   products,
   shops,
 } from "@workspace/db"
-import { getVerifiedUser, isSystemAdmin } from "@/lib/merchant-session"
+import { getSystemAdminUser } from "@/lib/merchant-session"
 import {
   enforceRateLimit,
   hasTrustedOrigin,
@@ -27,8 +27,8 @@ const reviewSchema = z.object({
 })
 
 export async function GET(request: Request) {
-  const actor = await getVerifiedUser(request)
-  if (!actor || !isSystemAdmin(actor.email))
+  const actor = await getSystemAdminUser(request)
+  if (!actor)
     return NextResponse.json(
       { error: "System administrator access required." },
       { status: 403 }
@@ -60,8 +60,8 @@ export async function PATCH(request: Request) {
       { error: "Request origin is not allowed." },
       { status: 403 }
     )
-  const actor = await getVerifiedUser(request)
-  if (!actor || !isSystemAdmin(actor.email))
+  const actor = await getSystemAdminUser(request)
+  if (!actor)
     return NextResponse.json(
       { error: "System administrator access required." },
       { status: 403 }

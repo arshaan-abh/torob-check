@@ -58,7 +58,7 @@ export function AdminLoginForm() {
         window.location.replace("/admin/setup")
       } else if (access.status === 403) {
         setStatus(
-          "این حساب مدیر سامانه نیست. با ایمیلی وارد شوید که در تنظیمات سرور برای مدیر سامانه ثبت شده است."
+          "این حساب مدیر سامانه نیست. اگر هنوز مدیری ندارید، نخستین حساب را بسازید؛ یا با یکی از ایمیل‌های SYSTEM_ADMIN_EMAILS ثبت‌نام کنید."
         )
       } else if (access.status === 401) {
         setStatus("ابتدا ایمیل این حساب را تأیید کنید، سپس دوباره وارد شوید.")
@@ -90,8 +90,8 @@ export function AdminLoginForm() {
         <CardHeader>
           <CardTitle>حساب مدیر سامانه</CardTitle>
           <CardDescription>
-            ایمیل باید تأیید شده باشد و در تنظیمات سرور برای مدیریت مجاز شده
-            باشد.
+            نخستین حساب هنگام نبود مدیر، مدیر سامانه می‌شود. ایمیل‌های مجاز در
+            SYSTEM_ADMIN_EMAILS نیز دسترسی دارند.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -129,11 +129,12 @@ export function AdminLoginForm() {
             </Button>
           </form>
           <p className="mt-4 text-sm text-muted-foreground">
-            حساب مدیر سامانه را هنوز نساخته‌اید؟ ابتدا ایمیل را در تنظیمات سرور
-            مجاز کنید، سپس از مسیر{" "}
+            هنوز حسابی نساخته‌اید؟ از مسیر ساخت حساب استفاده کنید. اگر مدیری در
+            سیستم نباشد، نخستین ثبت‌نام دسترسی مدیر می‌گیرد؛ ایمیل‌دهی برای ورود
+            نخستین مدیر لازم نیست.{" "}
             <Link
               className="text-primary underline underline-offset-4"
-              href="/merchant"
+              href="/admin/setup"
             >
               ساخت حساب
             </Link>{" "}

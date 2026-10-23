@@ -1,37 +1,35 @@
 import "server-only"
 import { getAuth } from "@/lib/auth"
+import { isSystemAdmin } from "@/lib/system-admin"
 
-export type VerifiedUser = {
+export type AuthenticatedUser = {
   id: string
   email: string
   name: string
   emailVerified: boolean
 }
 
-export async function getVerifiedUser(request: Request) {
+export async function getAuthenticatedUser(request: Request) {
   const session = await getAuth().api.getSession({ headers: request.headers })
-  if (!session || !session.user.emailVerified) return null
+  if (!session) return null
 
-  return session.user as VerifiedUser
+  return session.user as AuthenticatedUser
+}
+
+export async function getVerifiedUser(request: Request) {
+  const user = await getAuthenticatedUser(request)
+  if (!user?.emailVerified) return null
+  return user
+}
+
+export async function getSystemAdminUser(request: Request) {
+  const user = await getAuthenticatedUser(request)
+  if (!user || !(await isSystemAdmin(user.id, user.email))) return null
+  return user
 }
 
 export async function getMerchantUser(request: Request) {
   return getVerifiedUser(request)
 }
 
-function configuredSystemAdmins() {
-  const configuredEmails =
-    process.env.SYSTEM_ADMIN_EMAILS || process.env.MERCHANT_ADMIN_EMAILS || ""
-  return configuredEmails
-    .split(",")
-    .map((value) => value.trim().toLowerCase())
-    .filter(Boolean)
-}
-
-export function isSystemAdminConfigured() {
-  return configuredSystemAdmins().length > 0
-}
-
-export function isSystemAdmin(email: string) {
-  return configuredSystemAdmins().includes(email.trim().toLowerCase())
-}
+export { isSystemAdminConfigured } from "@/lib/system-admin"
