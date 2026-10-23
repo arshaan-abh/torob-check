@@ -31,7 +31,10 @@ export async function GET(request: Request) {
     return Response.json(result, {
       headers: { "Cache-Control": "private, no-store" },
     })
-  } catch {
+  } catch (error) {
+    if (process.env.NODE_ENV !== "production") {
+      console.error("Failed to load map shops:", error)
+    }
     return Response.json(
       { error: "Shop data could not be loaded." },
       { status: 503, headers: { "Cache-Control": "no-store" } }

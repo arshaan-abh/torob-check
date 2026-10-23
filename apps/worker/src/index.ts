@@ -15,7 +15,10 @@ const DATABASE_URL = process.env.DATABASE_URL
 if (!DATABASE_URL)
   throw new Error("DATABASE_URL is required by the refresh worker")
 
-const boss = new PgBoss({ connectionString: DATABASE_URL })
+const boss = new PgBoss({
+  connectionString: DATABASE_URL,
+  registerInstance: false,
+})
 const db = getDb()
 const MAX_INSTAGRAM_PAGES = 4
 const MAX_MEDIA_PER_SOURCE = 80
