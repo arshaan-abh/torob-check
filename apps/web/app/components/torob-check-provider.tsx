@@ -27,7 +27,7 @@ type TorobCheckContextValue = {
 }
 
 const INITIAL_STATE: TorobCheckState = {
-  movement: "idle",
+  movement: "walking",
   speech: "silent",
 }
 
