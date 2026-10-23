@@ -29,13 +29,11 @@ import { cn } from "@workspace/ui/lib/utils"
 import { TorobCheckCharacter } from "@/app/components/torob-check-character"
 
 const OPENFREEMAP_STYLE = "https://tiles.openfreemap.org/styles/fiord"
-const COMPACT_DRAWER_SNAP_POINT = "7.5rem"
+const COMPACT_DRAWER_SNAP_POINT = "6.25rem"
 const DEFAULT_DRAWER_SNAP_POINT = 0.66
-const FULL_DRAWER_SNAP_POINT = 1
 const DRAWER_SNAP_POINTS = [
   COMPACT_DRAWER_SNAP_POINT,
   DEFAULT_DRAWER_SNAP_POINT,
-  FULL_DRAWER_SNAP_POINT,
 ]
 const SHOP_SOURCE_ID = "torob-shops"
 const SHOP_POINT_LAYER_ID = "torob-shop-points"
@@ -571,21 +569,14 @@ export default function MapExperience() {
   )
 
   const isCompactDrawer = drawerSnapPoint === COMPACT_DRAWER_SNAP_POINT
-  const drawerExpandLabel =
-    drawerSnapPoint === FULL_DRAWER_SNAP_POINT
-      ? "بازگشت به اندازه پیش‌فرض"
-      : isCompactDrawer
-        ? "نمایش جستجو و فهرست فروشگاه‌ها"
-        : "نمایش تمام‌صفحه فهرست فروشگاه‌ها"
+  const drawerExpandLabel = isCompactDrawer
+    ? "نمایش جستجو و فهرست فروشگاه‌ها"
+    : "کوچک کردن فهرست فروشگاه‌ها"
 
   const advanceDrawerSnapPoint = () => {
-    if (drawerSnapPoint === FULL_DRAWER_SNAP_POINT) {
-      setDrawerSnapPoint(DEFAULT_DRAWER_SNAP_POINT)
-    } else if (isCompactDrawer) {
-      setDrawerSnapPoint(DEFAULT_DRAWER_SNAP_POINT)
-    } else {
-      setDrawerSnapPoint(FULL_DRAWER_SNAP_POINT)
-    }
+    setDrawerSnapPoint(
+      isCompactDrawer ? DEFAULT_DRAWER_SNAP_POINT : COMPACT_DRAWER_SNAP_POINT
+    )
   }
 
   const mapStatusLabel =
@@ -600,27 +591,15 @@ export default function MapExperience() {
       <div
         ref={mapContainerRef}
         className="torob-map absolute inset-0"
-        data-drawer-snap={
-          isCompactDrawer
-            ? "peek"
-            : drawerSnapPoint === FULL_DRAWER_SNAP_POINT
-              ? "full"
-              : "default"
-        }
+        data-drawer-snap={isCompactDrawer ? "peek" : "default"}
         aria-label="نقشه فروشگاه‌های تهران"
       />
 
       <div
         aria-label="منابع نقشه"
         dir="ltr"
-        data-drawer-snap={
-          isCompactDrawer
-            ? "peek"
-            : drawerSnapPoint === FULL_DRAWER_SNAP_POINT
-              ? "full"
-              : "default"
-        }
-        className="torob-map-attribution absolute left-2.5 z-10 flex items-center gap-1.5 rounded-md border border-border/60 bg-background/95 px-2.5 py-1.5 text-[11px] leading-4 text-foreground shadow-sm backdrop-blur-sm"
+        data-drawer-snap={isCompactDrawer ? "peek" : "default"}
+        className="torob-map-attribution absolute left-3 z-10 flex items-center gap-1.5 rounded-2xl border border-border/70 bg-card/95 px-3 py-2 text-xs leading-4 text-muted-foreground shadow-lg shadow-black/10 backdrop-blur-xl"
       >
         <a
           href="https://www.openstreetmap.org/copyright"
@@ -652,6 +631,7 @@ export default function MapExperience() {
           type="button"
           variant="ghost"
           size="icon-lg"
+          className="rounded-full"
           aria-label="بزرگ‌نمایی نقشه"
           onClick={() => mapRef.current?.zoomIn({ duration: 250 })}
         >
@@ -661,6 +641,7 @@ export default function MapExperience() {
           type="button"
           variant="ghost"
           size="icon-lg"
+          className="rounded-full"
           aria-label="کوچک‌نمایی نقشه"
           onClick={() => mapRef.current?.zoomOut({ duration: 250 })}
         >
@@ -670,6 +651,7 @@ export default function MapExperience() {
           type="button"
           variant="ghost"
           size="icon-lg"
+          className="rounded-full"
           aria-label="رفتن به موقعیت من"
           onClick={requestUserLocation}
         >
@@ -693,7 +675,7 @@ export default function MapExperience() {
       >
         <DrawerVirtualKeyboardProvider>
           <DrawerContent
-            className="max-h-none rounded-t-3xl border-border/70 bg-card/95 shadow-2xl shadow-black/20 backdrop-blur-xl"
+            className="torob-map-drawer max-h-none rounded-t-3xl border-border/70 bg-card/95 shadow-2xl shadow-black/20 backdrop-blur-xl"
             initialFocus={false}
           >
             <DrawerHeader className="gap-0 px-4 pt-1 pb-3 text-right sm:px-6">
@@ -720,10 +702,10 @@ export default function MapExperience() {
                   onClick={advanceDrawerSnapPoint}
                   className="shrink-0 rounded-xl"
                 >
-                  {drawerSnapPoint === FULL_DRAWER_SNAP_POINT ? (
-                    <ChevronDown aria-hidden="true" />
-                  ) : (
+                  {isCompactDrawer ? (
                     <ChevronUp aria-hidden="true" />
+                  ) : (
+                    <ChevronDown aria-hidden="true" />
                   )}
                 </Button>
               </div>
@@ -734,218 +716,216 @@ export default function MapExperience() {
               </DrawerDescription>
             </DrawerHeader>
 
-            {!isCompactDrawer && (
-              <div className="flex min-h-0 flex-1 flex-col">
-                <form
-                  role="search"
-                  onSubmit={handleSearch}
-                  className="shrink-0 px-4 pt-1 pb-3 sm:px-6"
-                >
-                  <FieldGroup className="gap-0">
-                    <Field>
-                      <FieldLabel htmlFor="shop-search" className="sr-only">
-                        جستجوی فروشگاه یا محله
-                      </FieldLabel>
-                      <div className="flex items-center gap-2">
-                        <Input
-                          id="shop-search"
-                          type="text"
-                          value={query}
-                          onChange={(event) => setQuery(event.target.value)}
-                          placeholder="نام فروشگاه، کالا یا محله"
-                          autoComplete="off"
-                          inputMode="search"
-                          className="h-11 min-w-0 rounded-xl bg-background text-sm"
-                        />
-                        {query && (
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="icon-lg"
-                            aria-label="پاک کردن جستجو"
-                            onClick={clearSearch}
-                            className="shrink-0 rounded-xl"
-                          >
-                            <X aria-hidden="true" />
-                          </Button>
-                        )}
+            <div className="flex min-h-0 flex-1 flex-col">
+              <form
+                role="search"
+                onSubmit={handleSearch}
+                className="shrink-0 px-4 pt-1 pb-3 sm:px-6"
+              >
+                <FieldGroup className="gap-0">
+                  <Field>
+                    <FieldLabel htmlFor="shop-search" className="sr-only">
+                      جستجوی فروشگاه یا محله
+                    </FieldLabel>
+                    <div className="flex items-center gap-2">
+                      <Input
+                        id="shop-search"
+                        type="text"
+                        value={query}
+                        onChange={(event) => setQuery(event.target.value)}
+                        placeholder="نام فروشگاه، کالا یا محله"
+                        autoComplete="off"
+                        inputMode="search"
+                        className="h-11 min-w-0 rounded-xl bg-background text-sm"
+                      />
+                      {query && (
                         <Button
-                          type="submit"
+                          type="button"
+                          variant="outline"
                           size="icon-lg"
-                          aria-label="جستجوی فروشگاه‌ها"
-                          disabled={isSearching}
+                          aria-label="پاک کردن جستجو"
+                          onClick={clearSearch}
                           className="shrink-0 rounded-xl"
                         >
-                          <Search aria-hidden="true" />
+                          <X aria-hidden="true" />
                         </Button>
-                      </div>
-                    </Field>
-                  </FieldGroup>
-                </form>
-
-                <div className="flex shrink-0 items-center justify-between gap-3 px-4 pb-2 sm:px-6">
-                  <Badge variant="outline" className="gap-1.5 font-normal">
-                    <span
-                      className={cn(
-                        "size-1.5 rounded-full",
-                        mapStatus === "ready"
-                          ? "bg-primary"
-                          : mapStatus === "error"
-                            ? "bg-destructive"
-                            : "animate-pulse bg-muted-foreground"
                       )}
-                    />
-                    {mapStatusLabel}
-                  </Badge>
-                  <span className="text-xs text-muted-foreground">
-                    {shopsStatus === "loading" && shops.length === 0
-                      ? "در حال بارگذاری فروشگاه‌ها…"
-                      : shopCountLabel}
-                  </span>
-                </div>
-
-                {(searchError || locationError || mapStatus === "error") && (
-                  <div className="flex shrink-0 flex-col gap-2 px-4 pb-2 sm:px-6">
-                    {searchError && (
-                      <p
-                        role="alert"
-                        className="rounded-xl bg-destructive/10 px-3 py-2 text-xs leading-5 text-destructive"
-                      >
-                        {searchError}
-                      </p>
-                    )}
-                    {locationError && (
-                      <p
-                        role="status"
-                        className="rounded-xl bg-destructive/10 px-3 py-2 text-xs leading-5 text-destructive"
-                      >
-                        {locationError}
-                      </p>
-                    )}
-                    {mapStatus === "error" && (
-                      <p
-                        role="alert"
-                        className="rounded-xl bg-destructive/10 px-3 py-2 text-xs leading-5 text-destructive"
-                      >
-                        بارگذاری نقشه انجام نشد. اتصال اینترنت یا دسترسی به
-                        سرویس نقشه را بررسی کنید.
-                      </p>
-                    )}
-                  </div>
-                )}
-
-                <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 pb-4 sm:px-4">
-                  {shopsStatus === "error" ? (
-                    <div className="rounded-2xl bg-muted/70 px-4 py-5 text-center text-sm leading-6 text-muted-foreground">
-                      اطلاعات فروشگاه‌ها بارگذاری نشد. مطمئن شوید دیتابیس آماده
-                      و داده‌ها وارد شده‌اند.
-                    </div>
-                  ) : shops.length === 0 && shopsStatus === "ready" ? (
-                    <div className="rounded-2xl bg-muted/70 px-4 py-5 text-center text-sm leading-6 text-muted-foreground">
-                      {activeSearchRef.current
-                        ? "فروشگاهی با این نام یا محدوده پیدا نشد."
-                        : "در این محدوده فروشگاهی با موقعیت ثبت‌شده پیدا نشد."}
-                    </div>
-                  ) : (
-                    <div className="flex flex-col gap-1">
-                      {nearestShops.slice(0, 80).map((shop) => {
-                        const isSelected = shop.shopId === selectedShopId
-                        const price = formatPrice(shop.lowestPrice)
-
-                        return (
-                          <button
-                            key={shop.shopId}
-                            type="button"
-                            aria-pressed={isSelected}
-                            onClick={() => selectShop(shop)}
-                            className={cn(
-                              "flex w-full items-start gap-3 rounded-2xl p-3 text-right transition-colors hover:bg-muted/70 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
-                              isSelected && "bg-primary/10"
-                            )}
-                          >
-                            <span
-                              className={cn(
-                                "mt-0.5 grid size-9 shrink-0 place-items-center rounded-xl",
-                                isSelected
-                                  ? "bg-primary text-primary-foreground"
-                                  : "bg-muted text-muted-foreground"
-                              )}
-                            >
-                              <Store aria-hidden="true" />
-                            </span>
-                            <span className="min-w-0 flex-1">
-                              <span className="block truncate text-sm font-semibold">
-                                {shop.name || "فروشگاه بدون نام"}
-                              </span>
-                              <span className="mt-1 block truncate text-xs text-muted-foreground">
-                                {shop.locationLabel || shop.address || "تهران"}
-                              </span>
-                              <span className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted-foreground">
-                                {shop.categoryNames?.[0] && (
-                                  <span className="truncate">
-                                    {shop.categoryNames[0]}
-                                  </span>
-                                )}
-                                {shop.offerCount > 0 && (
-                                  <span>
-                                    {persianNumber.format(shop.offerCount)} کالا
-                                  </span>
-                                )}
-                                {price && (
-                                  <span className="font-medium text-foreground">
-                                    از {price}
-                                  </span>
-                                )}
-                              </span>
-                            </span>
-                          </button>
-                        )
-                      })}
-                    </div>
-                  )}
-                </div>
-
-                {selectedShop && (
-                  <div className="shrink-0 border-t border-border/70 bg-muted/30 px-4 py-3 sm:px-6">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="text-xs text-muted-foreground">
-                          {selectedShop.locationLabel || "فروشگاه انتخاب‌شده"}
-                        </p>
-                        <h3 className="mt-1 truncate text-sm font-bold">
-                          {selectedShop.name || "فروشگاه بدون نام"}
-                        </h3>
-                      </div>
                       <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon-sm"
-                        aria-label="بستن جزئیات فروشگاه"
-                        onClick={() => setSelectedShopId(null)}
+                        type="submit"
+                        size="icon-lg"
+                        aria-label="جستجوی فروشگاه‌ها"
+                        disabled={isSearching}
+                        className="shrink-0 rounded-xl"
                       >
-                        <X aria-hidden="true" />
+                        <Search aria-hidden="true" />
                       </Button>
                     </div>
-                    {selectedShop.address && (
-                      <p className="mt-2 text-xs leading-5 text-muted-foreground">
-                        {selectedShop.address}
-                      </p>
+                  </Field>
+                </FieldGroup>
+              </form>
+
+              <div className="flex shrink-0 items-center justify-between gap-3 px-4 pb-2 sm:px-6">
+                <Badge variant="outline" className="gap-1.5 font-normal">
+                  <span
+                    className={cn(
+                      "size-1.5 rounded-full",
+                      mapStatus === "ready"
+                        ? "bg-primary"
+                        : mapStatus === "error"
+                          ? "bg-destructive"
+                          : "animate-pulse bg-muted-foreground"
                     )}
-                    <div className="mt-2 flex items-center justify-between gap-2 rounded-xl bg-card px-3 py-2 text-xs">
-                      <span className="text-muted-foreground">
-                        {persianNumber.format(selectedShop.offerCount)} پیشنهاد
-                        کالا
-                      </span>
-                      {formatPrice(selectedShop.lowestPrice) && (
-                        <span className="font-semibold text-primary">
-                          از {formatPrice(selectedShop.lowestPrice)}
-                        </span>
-                      )}
-                    </div>
+                  />
+                  {mapStatusLabel}
+                </Badge>
+                <span className="text-xs text-muted-foreground">
+                  {shopsStatus === "loading" && shops.length === 0
+                    ? "در حال بارگذاری فروشگاه‌ها…"
+                    : shopCountLabel}
+                </span>
+              </div>
+
+              {(searchError || locationError || mapStatus === "error") && (
+                <div className="flex shrink-0 flex-col gap-2 px-4 pb-2 sm:px-6">
+                  {searchError && (
+                    <p
+                      role="alert"
+                      className="rounded-xl bg-destructive/10 px-3 py-2 text-xs leading-5 text-destructive"
+                    >
+                      {searchError}
+                    </p>
+                  )}
+                  {locationError && (
+                    <p
+                      role="status"
+                      className="rounded-xl bg-destructive/10 px-3 py-2 text-xs leading-5 text-destructive"
+                    >
+                      {locationError}
+                    </p>
+                  )}
+                  {mapStatus === "error" && (
+                    <p
+                      role="alert"
+                      className="rounded-xl bg-destructive/10 px-3 py-2 text-xs leading-5 text-destructive"
+                    >
+                      بارگذاری نقشه انجام نشد. اتصال اینترنت یا دسترسی به سرویس
+                      نقشه را بررسی کنید.
+                    </p>
+                  )}
+                </div>
+              )}
+
+              <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 pb-4 sm:px-4">
+                {shopsStatus === "error" ? (
+                  <div className="rounded-2xl bg-muted/70 px-4 py-5 text-center text-sm leading-6 text-muted-foreground">
+                    اطلاعات فروشگاه‌ها بارگذاری نشد. مطمئن شوید دیتابیس آماده و
+                    داده‌ها وارد شده‌اند.
+                  </div>
+                ) : shops.length === 0 && shopsStatus === "ready" ? (
+                  <div className="rounded-2xl bg-muted/70 px-4 py-5 text-center text-sm leading-6 text-muted-foreground">
+                    {activeSearchRef.current
+                      ? "فروشگاهی با این نام یا محدوده پیدا نشد."
+                      : "در این محدوده فروشگاهی با موقعیت ثبت‌شده پیدا نشد."}
+                  </div>
+                ) : (
+                  <div className="flex flex-col gap-1">
+                    {nearestShops.slice(0, 80).map((shop) => {
+                      const isSelected = shop.shopId === selectedShopId
+                      const price = formatPrice(shop.lowestPrice)
+
+                      return (
+                        <button
+                          key={shop.shopId}
+                          type="button"
+                          aria-pressed={isSelected}
+                          onClick={() => selectShop(shop)}
+                          className={cn(
+                            "flex w-full items-start gap-3 rounded-2xl p-3 text-right transition-colors hover:bg-muted/70 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
+                            isSelected && "bg-primary/10"
+                          )}
+                        >
+                          <span
+                            className={cn(
+                              "mt-0.5 grid size-9 shrink-0 place-items-center rounded-xl",
+                              isSelected
+                                ? "bg-primary text-primary-foreground"
+                                : "bg-muted text-muted-foreground"
+                            )}
+                          >
+                            <Store aria-hidden="true" />
+                          </span>
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-sm font-semibold">
+                              {shop.name || "فروشگاه بدون نام"}
+                            </span>
+                            <span className="mt-1 block truncate text-xs text-muted-foreground">
+                              {shop.locationLabel || shop.address || "تهران"}
+                            </span>
+                            <span className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted-foreground">
+                              {shop.categoryNames?.[0] && (
+                                <span className="truncate">
+                                  {shop.categoryNames[0]}
+                                </span>
+                              )}
+                              {shop.offerCount > 0 && (
+                                <span>
+                                  {persianNumber.format(shop.offerCount)} کالا
+                                </span>
+                              )}
+                              {price && (
+                                <span className="font-medium text-foreground">
+                                  از {price}
+                                </span>
+                              )}
+                            </span>
+                          </span>
+                        </button>
+                      )
+                    })}
                   </div>
                 )}
               </div>
-            )}
+
+              {selectedShop && (
+                <div className="shrink-0 border-t border-border/70 bg-muted/30 px-4 py-3 sm:px-6">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-xs text-muted-foreground">
+                        {selectedShop.locationLabel || "فروشگاه انتخاب‌شده"}
+                      </p>
+                      <h3 className="mt-1 truncate text-sm font-bold">
+                        {selectedShop.name || "فروشگاه بدون نام"}
+                      </h3>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-sm"
+                      aria-label="بستن جزئیات فروشگاه"
+                      onClick={() => setSelectedShopId(null)}
+                    >
+                      <X aria-hidden="true" />
+                    </Button>
+                  </div>
+                  {selectedShop.address && (
+                    <p className="mt-2 text-xs leading-5 text-muted-foreground">
+                      {selectedShop.address}
+                    </p>
+                  )}
+                  <div className="mt-2 flex items-center justify-between gap-2 rounded-xl bg-card px-3 py-2 text-xs">
+                    <span className="text-muted-foreground">
+                      {persianNumber.format(selectedShop.offerCount)} پیشنهاد
+                      کالا
+                    </span>
+                    {formatPrice(selectedShop.lowestPrice) && (
+                      <span className="font-semibold text-primary">
+                        از {formatPrice(selectedShop.lowestPrice)}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
           </DrawerContent>
         </DrawerVirtualKeyboardProvider>
       </Drawer>
