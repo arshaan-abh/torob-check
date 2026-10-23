@@ -3,16 +3,10 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react"
 import { useChat } from "@ai-sdk/react"
 import { DefaultChatTransport } from "ai"
-import {
-  ExternalLink,
-  LoaderCircle,
-  MapPin,
-  Send,
-  ShoppingBag,
-  X,
-} from "lucide-react"
+import { ExternalLink, LoaderCircle, MapPin, Send, X } from "lucide-react"
 import { Button } from "@workspace/ui/components/button"
 import { ScrollArea } from "@workspace/ui/components/scroll-area"
+import { TorobCheckCharacter } from "@/app/components/torob-check-character"
 import { useTorobCheck } from "@/app/components/torob-check-provider"
 
 export type ShoppingAssistantMapContext = {
@@ -294,23 +288,31 @@ export function ShoppingAssistantPanel({ mapContext, onClose }: Props) {
           <X aria-hidden="true" />
         </Button>
       </header>
+      <div className="flex shrink-0 items-center gap-3 border-b border-border/70 bg-muted/20 px-4 py-2.5">
+        <TorobCheckCharacter
+          className="shrink-0"
+          size={58}
+          label="تربچِک، همراه خرید شما"
+        />
+        <div className="min-w-0">
+          <p className="text-sm font-semibold">
+            {busy
+              ? "همراه خرید در حال بررسی است"
+              : messages.length === 0
+                ? "دنبال چه چیزی هستید؟"
+                : "همراه خرید شما"}
+          </p>
+          <p className="mt-0.5 text-xs leading-5 text-muted-foreground">
+            {messages.length === 0
+              ? "محصول، بودجه به تومان، ویژگی‌ها یا محله را بنویسید. قیمت و موجودی با زمان و سطح تأییدشان نشان داده می‌شوند."
+              : busy
+                ? "داده‌های فروشگاه‌ها در حال بررسی است."
+                : "برای ادامه یا پرسش درباره فروشگاه‌ها پیام بنویسید."}
+          </p>
+        </div>
+      </div>
       <ScrollArea className="min-h-32 flex-1 px-4 py-3">
         <div className="grid gap-4">
-          {messages.length === 0 && (
-            <div className="rounded-xl bg-muted/60 p-3 text-sm leading-6">
-              <p className="flex items-center gap-2 font-semibold">
-                <ShoppingBag
-                  aria-hidden="true"
-                  className="size-4 text-primary"
-                />
-                دنبال چه چیزی هستید؟
-              </p>
-              <p className="mt-1 text-muted-foreground">
-                محصول، بودجه به تومان، ویژگی‌ها یا محله را بنویسید. قیمت و
-                موجودی فقط با زمان و سطح تأییدشان نشان داده می‌شوند.
-              </p>
-            </div>
-          )}
           {messages.map((message) => (
             <article
               key={message.id}
@@ -407,11 +409,6 @@ export function ShoppingAssistantPanel({ mapContext, onClose }: Props) {
           </Button>
         )}
       </form>
-      <p className="px-4 pb-3 text-[11px] leading-5 text-muted-foreground">
-        اگر فروشگاه در چند پیام پاسخ داد، متن‌ها را همین‌جا جداگانه بفرست تا
-        باهم جمع‌بندی شوند. نقل‌قول‌ها تأیید سامانه نیستند و گفت‌وگو فقط در این
-        صفحه نگه‌داری می‌شود.
-      </p>
     </section>
   )
 }

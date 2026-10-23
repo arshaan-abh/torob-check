@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react"
 import type { FormEvent } from "react"
+import Link from "next/link"
 import { useVirtualizer } from "@tanstack/react-virtual"
 import type { GeoJSONSource, Map as MapLibreMap } from "maplibre-gl"
 import {
@@ -13,6 +14,7 @@ import {
   Minus,
   Plus,
   Search,
+  Settings,
   Store,
   X,
 } from "lucide-react"
@@ -1277,13 +1279,6 @@ export default function MapExperience() {
     )
   }
 
-  const mapStatusLabel =
-    mapStatus === "ready"
-      ? "نقشه آماده است"
-      : mapStatus === "error"
-        ? "نقشه در دسترس نیست"
-        : "در حال بارگذاری نقشه"
-
   return (
     <main className="relative h-dvh min-h-[540px] w-full overflow-hidden bg-background text-foreground">
       <div
@@ -1318,34 +1313,31 @@ export default function MapExperience() {
         </a>
       </div>
 
-      <div
-        data-drawer-snap={isCompactDrawer ? "peek" : "default"}
-        className="torob-map-overlay absolute right-3 z-10"
-      >
-        <button
-          type="button"
-          aria-label={
-            assistantOpen
-              ? "دستیار خرید باز است"
-              : "باز کردن دستیار خرید با ترب‌چک"
-          }
-          aria-expanded={assistantOpen}
-          onClick={() => {
-            if (assistantOpen) return
-            setAssistantOpen(true)
-            setIsDrawerOpen(false)
-          }}
-          className="group relative flex items-center rounded-full border border-border/70 bg-card/95 p-1 shadow-lg shadow-black/15 transition-transform duration-200 hover:scale-[1.03] focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+      {!assistantOpen && (
+        <div
+          data-drawer-snap={isCompactDrawer ? "peek" : "default"}
+          className="torob-map-overlay absolute right-3 z-10"
         >
-          <TorobCheckCharacter className="size-[76px]" />
-          <span
-            className="absolute -top-1 -left-1 grid size-8 place-items-center rounded-full bg-primary text-primary-foreground shadow-md shadow-black/15"
-            aria-hidden="true"
+          <button
+            type="button"
+            aria-label="باز کردن دستیار خرید با ترب‌چک"
+            aria-expanded={false}
+            onClick={() => {
+              setAssistantOpen(true)
+              setIsDrawerOpen(false)
+            }}
+            className="group relative flex items-center rounded-full transition-transform duration-200 hover:scale-[1.03] focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
           >
-            <MessageCircle className="size-4" />
-          </span>
-        </button>
-      </div>
+            <TorobCheckCharacter className="size-[76px]" />
+            <span
+              className="absolute -top-1 -left-1 grid size-8 place-items-center rounded-full bg-primary text-primary-foreground shadow-md shadow-black/15"
+              aria-hidden="true"
+            >
+              <MessageCircle className="size-4" />
+            </span>
+          </button>
+        </div>
+      )}
 
       {assistantOpen && (
         <ShoppingAssistantPanel
@@ -1356,6 +1348,15 @@ export default function MapExperience() {
           }}
         />
       )}
+
+      <Link
+        href="/admin/settings"
+        aria-label="تنظیمات"
+        title="تنظیمات"
+        className="absolute top-3 right-3 z-20 grid size-11 place-items-center rounded-full border border-border/70 bg-card/95 text-foreground shadow-lg shadow-black/10 backdrop-blur-xl transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none md:top-4 md:right-4"
+      >
+        <Settings aria-hidden="true" className="size-5" />
+      </Link>
 
       <div
         role="group"
@@ -1444,23 +1445,6 @@ export default function MapExperience() {
                       </p>
                     </div>
                   </div>
-
-                  <Badge
-                    variant="outline"
-                    className="ms-auto hidden gap-1.5 font-normal sm:inline-flex"
-                  >
-                    <span
-                      className={cn(
-                        "size-1.5 rounded-full",
-                        mapStatus === "ready"
-                          ? "bg-chart-2"
-                          : mapStatus === "error"
-                            ? "bg-destructive"
-                            : "animate-pulse bg-muted-foreground"
-                      )}
-                    />
-                    {mapStatusLabel}
-                  </Badge>
 
                   <Button
                     type="button"
