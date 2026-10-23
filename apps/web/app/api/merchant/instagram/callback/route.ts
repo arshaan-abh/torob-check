@@ -166,16 +166,14 @@ export async function GET(request: Request) {
       .update(shops)
       .set({ instagram: sourceUrl.toString() })
       .where(eq(shops.shopId, oauthState.shopId))
-    await tx
-      .insert(merchantAuditLogs)
-      .values({
-        actorId: oauthState.userId,
-        shopId: oauthState.shopId,
-        action: "shop.instagram.connect",
-        entityType: "shop_source",
-        entityId: source.id,
-        afterValue: { username, status: "active" },
-      })
+    await tx.insert(merchantAuditLogs).values({
+      actorId: oauthState.userId,
+      shopId: oauthState.shopId,
+      action: "shop.instagram.connect",
+      entityType: "shop_source",
+      entityId: source.id,
+      afterValue: { username, status: "active" },
+    })
   })
   return redirectToMerchant(request, "connected")
 }
