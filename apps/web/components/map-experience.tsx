@@ -7,6 +7,7 @@ import {
   ChevronDown,
   ChevronUp,
   LocateFixed,
+  MapPin,
   Minus,
   Plus,
   Search,
@@ -14,10 +15,24 @@ import {
   X,
 } from "lucide-react"
 import { Badge } from "@workspace/ui/components/badge"
+import {
+  Card,
+  CardAction,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@workspace/ui/components/card"
 import { Field, FieldGroup, FieldLabel } from "@workspace/ui/components/field"
 import { Input } from "@workspace/ui/components/input"
 import { Button } from "@workspace/ui/components/button"
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@workspace/ui/components/popover"
 import { ScrollArea } from "@workspace/ui/components/scroll-area"
+import { Separator } from "@workspace/ui/components/separator"
 import {
   Drawer,
   DrawerContent,
@@ -32,6 +47,7 @@ import { TorobCheckCharacter } from "@/app/components/torob-check-character"
 const OPENFREEMAP_STYLE = "https://tiles.openfreemap.org/styles/fiord"
 const COMPACT_DRAWER_SNAP_POINT = "6.25rem"
 const DEFAULT_DRAWER_SNAP_POINT = 0.66
+const SELECTED_SHOP_ZOOM = 18
 const DRAWER_SNAP_POINTS = [
   COMPACT_DRAWER_SNAP_POINT,
   DEFAULT_DRAWER_SNAP_POINT,
@@ -52,6 +68,8 @@ type Shop = {
   offerCount: number
   lowestPrice: string | null
 }
+
+type ShopMapPosition = { x: number; y: number }
 
 type ShopResponse = {
   shops: Shop[]
@@ -102,12 +120,144 @@ function formatShopCount(total: number, truncated: boolean) {
   return truncated ? `بیش از ${count} فروشگاه` : `${count} فروشگاه`
 }
 
+function ShopDetailPopover({
+  map,
+  shop,
+  onClose,
+}: {
+  map: MapLibreMap
+  shop: Shop
+  onClose: () => void
+}) {
+  const [isOpen, setIsOpen] = useState(true)
+  const [anchorPosition, setAnchorPosition] = useState<ShopMapPosition>(() => {
+    const point = map.project([shop.lon, shop.lat])
+    return { x: point.x, y: point.y }
+  })
+
+  useEffect(() => {
+    const updateAnchorPosition = () => {
+      const point = map.project([shop.lon, shop.lat])
+      setAnchorPosition((current) =>
+        current.x === point.x && current.y === point.y
+          ? current
+          : { x: point.x, y: point.y }
+      )
+    }
+
+    map.on("move", updateAnchorPosition)
+    map.on("resize", updateAnchorPosition)
+
+    return () => {
+      map.off("move", updateAnchorPosition)
+      map.off("resize", updateAnchorPosition)
+    }
+  }, [map, shop.lat, shop.lon])
+
+  return (
+    <Popover
+      open={isOpen}
+      modal={false}
+      onOpenChange={setIsOpen}
+      onOpenChangeComplete={(open) => {
+        if (!open) onClose()
+      }}
+    >
+      <PopoverTrigger
+        aria-hidden="true"
+        tabIndex={-1}
+        className="pointer-events-none absolute z-20 size-px -translate-x-1/2 -translate-y-1/2 border-0 bg-transparent p-0 opacity-0"
+        style={{ left: anchorPosition.x, top: anchorPosition.y }}
+      />
+      <PopoverContent
+        showArrow
+        side="top"
+        sideOffset={12}
+        className="w-auto gap-0 overflow-visible bg-transparent p-0 shadow-none ring-0"
+      >
+        <Card
+          role="article"
+          dir="rtl"
+          aria-label={`جزئیات ${shop.name || "فروشگاه"}`}
+          className="w-[min(19rem,calc(100vw-2rem))] gap-0 rounded-2xl border border-border/70 bg-card/95 py-0 font-sans text-card-foreground shadow-2xl shadow-black/25 backdrop-blur-xl"
+        >
+          <CardHeader className="flex items-start gap-3 px-3.5 py-3.5">
+            <span className="relative grid size-11 shrink-0 place-items-center rounded-2xl border border-primary/10 bg-primary/10 text-primary">
+              <Store aria-hidden="true" className="size-5" />
+              <span className="absolute -end-0.5 -bottom-0.5 size-2.5 rounded-full border-2 border-card bg-chart-2" />
+            </span>
+            <div className="min-w-0 pt-0.5">
+              <CardTitle className="truncate text-sm leading-5 font-bold">
+                {shop.name || "فروشگاه بدون نام"}
+              </CardTitle>
+              <CardDescription className="mt-0.5 truncate text-xs leading-5">
+                {shop.locationLabel || "فروشگاه انتخاب‌شده"}
+              </CardDescription>
+            </div>
+            <CardAction className="ms-auto -me-1 -mt-1">
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                aria-label="بستن جزئیات فروشگاه"
+                onClick={() => setIsOpen(false)}
+                className="size-8 rounded-full text-muted-foreground"
+              >
+                <X aria-hidden="true" />
+              </Button>
+            </CardAction>
+          </CardHeader>
+
+          {shop.address && (
+            <>
+              <Separator className="bg-border/60" />
+              <CardContent className="flex items-start gap-2 px-3.5 py-2.5 text-xs leading-5 text-muted-foreground">
+                <MapPin
+                  aria-hidden="true"
+                  className="mt-0.5 size-3.5 shrink-0 text-primary/80"
+                />
+                <p className="line-clamp-2">{shop.address}</p>
+              </CardContent>
+            </>
+          )}
+
+          <Separator className="bg-border/60" />
+          <CardContent className="grid grid-cols-2 gap-2 bg-muted/25 p-3">
+            <div className="min-w-0 rounded-xl border border-border/50 bg-background/65 px-3 py-2">
+              <p className="text-[10px] leading-4 text-muted-foreground">
+                کالاهای فروشگاه
+              </p>
+              <Badge
+                variant="secondary"
+                className="mt-1 max-w-full px-1.5 text-xs font-semibold"
+              >
+                {persianNumber.format(shop.offerCount)} کالا
+              </Badge>
+            </div>
+            <div className="min-w-0 rounded-xl border border-border/50 bg-background/65 px-3 py-2">
+              <p className="text-[10px] leading-4 text-muted-foreground">
+                کمترین قیمت
+              </p>
+              <p className="mt-1 truncate text-xs font-semibold text-primary">
+                {formatPrice(shop.lowestPrice) || "ثبت نشده"}
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      </PopoverContent>
+    </Popover>
+  )
+}
+
 export default function MapExperience() {
   const mapContainerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<MapLibreMap | null>(null)
   const requestRef = useRef<AbortController | null>(null)
   const activeSearchRef = useRef("")
   const selectedShopIdRef = useRef<string | null>(null)
+  const shopsRef = useRef<Shop[]>([])
+  const hasUserLocationRef = useRef(false)
+  const locationPermissionDeniedRef = useRef(false)
 
   const [shops, setShops] = useState<Shop[]>([])
   const [totalShops, setTotalShops] = useState(0)
@@ -138,6 +288,7 @@ export default function MapExperience() {
   }, [])
 
   const selectedShop = shops.find((shop) => shop.shopId === selectedShopId)
+  shopsRef.current = shops
   const nearestShops = useMemo(() => {
     const longitudeScale = Math.cos((mapCenter[1] * Math.PI) / 180)
 
@@ -213,6 +364,30 @@ export default function MapExperience() {
 
       return null
     }
+  }, [])
+
+  const selectShop = useCallback((shop: Shop) => {
+    const map = mapRef.current
+    setSelectedShopId(shop.shopId)
+    setDrawerSnapPoint(COMPACT_DRAWER_SNAP_POINT)
+    map?.flyTo({
+      center: [shop.lon, shop.lat],
+      zoom: Math.max(map?.getZoom() ?? SELECTED_SHOP_ZOOM, SELECTED_SHOP_ZOOM),
+      duration: 700,
+    })
+  }, [])
+
+  const clearSelectedShop = useCallback((shopId: string) => {
+    setSelectedShopId((currentShopId) =>
+      currentShopId === shopId ? null : currentShopId
+    )
+  }, [])
+
+  const clearUserLocation = useCallback(() => {
+    const source = mapRef.current?.getSource(LOCATION_SOURCE_ID) as
+      GeoJSONSource | undefined
+
+    source?.setData(emptyFeatureCollection())
   }, [])
 
   useEffect(() => {
@@ -378,7 +553,10 @@ export default function MapExperience() {
 
           activeMap.on("click", SHOP_POINT_LAYER_ID, (event) => {
             const shopId = event.features?.[0]?.properties?.shopId
-            if (typeof shopId === "string") setSelectedShopId(shopId)
+            if (typeof shopId !== "string") return
+
+            const shop = shopsRef.current.find((item) => item.shopId === shopId)
+            if (shop) selectShop(shop)
           })
 
           activeMap.on("mouseenter", SHOP_POINT_LAYER_ID, () => {
@@ -419,7 +597,50 @@ export default function MapExperience() {
       activeMap?.remove()
       mapRef.current = null
     }
-  }, [loadShops])
+  }, [loadShops, selectShop])
+
+  useEffect(() => {
+    if (!navigator.permissions?.query) return
+
+    let disposed = false
+    let permissionStatus: PermissionStatus | null = null
+
+    const handlePermissionChange = () => {
+      if (permissionStatus?.state === "denied") {
+        if (!hasUserLocationRef.current) return
+
+        hasUserLocationRef.current = false
+        locationPermissionDeniedRef.current = true
+        clearUserLocation()
+        setLocationError("دسترسی به موقعیت مکانی داده نشد.")
+        setDrawerSnapPoint(DEFAULT_DRAWER_SNAP_POINT)
+        return
+      }
+
+      if (
+        permissionStatus?.state === "granted" &&
+        locationPermissionDeniedRef.current
+      ) {
+        locationPermissionDeniedRef.current = false
+        setLocationError(null)
+      }
+    }
+
+    void navigator.permissions
+      .query({ name: "geolocation" })
+      .then((status) => {
+        if (disposed) return
+
+        permissionStatus = status
+        permissionStatus.addEventListener("change", handlePermissionChange)
+      })
+      .catch(() => undefined)
+
+    return () => {
+      disposed = true
+      permissionStatus?.removeEventListener("change", handlePermissionChange)
+    }
+  }, [clearUserLocation])
 
   useEffect(() => {
     const map = mapRef.current
@@ -472,8 +693,7 @@ export default function MapExperience() {
 
       if (!shop) return
 
-      setSelectedShopId(shop.shopId)
-      map.flyTo({ center: [shop.lon, shop.lat], zoom: 16, duration: 700 })
+      selectShop(shop)
       return
     }
 
@@ -517,18 +737,8 @@ export default function MapExperience() {
     if (map) void loadShops(map)
   }
 
-  const selectShop = (shop: Shop) => {
-    const map = mapRef.current
-    setSelectedShopId(shop.shopId)
-    setDrawerSnapPoint(DEFAULT_DRAWER_SNAP_POINT)
-    map?.flyTo({
-      center: [shop.lon, shop.lat],
-      zoom: Math.max(map?.getZoom() ?? 15, 15),
-      duration: 650,
-    })
-  }
-
   const requestUserLocation = () => {
+    locationPermissionDeniedRef.current = false
     setLocationError(null)
 
     if (!navigator.geolocation) {
@@ -544,6 +754,9 @@ export default function MapExperience() {
           GeoJSONSource | undefined
 
         if (!map || !source) return
+
+        hasUserLocationRef.current = true
+        locationPermissionDeniedRef.current = false
 
         source.setData({
           type: "FeatureCollection",
@@ -565,8 +778,19 @@ export default function MapExperience() {
           duration: 800,
         })
       },
-      () => {
-        setLocationError("دسترسی به موقعیت مکانی داده نشد.")
+      (error) => {
+        if (error.code === error.PERMISSION_DENIED) {
+          hasUserLocationRef.current = false
+          locationPermissionDeniedRef.current = true
+          clearUserLocation()
+          setLocationError("دسترسی به موقعیت مکانی داده نشد.")
+        } else if (error.code === error.POSITION_UNAVAILABLE) {
+          setLocationError("موقعیت مکانی فعلاً در دسترس نیست.")
+        } else {
+          setLocationError(
+            "دریافت موقعیت مکانی بیش از حد طول کشید. دوباره تلاش کنید."
+          )
+        }
         setDrawerSnapPoint(DEFAULT_DRAWER_SNAP_POINT)
       },
       { enableHighAccuracy: false, maximumAge: 60_000, timeout: 12_000 }
@@ -605,11 +829,11 @@ export default function MapExperience() {
         aria-label="نقشه فروشگاه‌های تهران"
       />
 
-      {/* <div
+      <div
         aria-label="منابع نقشه"
         dir="ltr"
         data-drawer-snap={isCompactDrawer ? "peek" : "default"}
-        className="torob-map-attribution absolute left-3 z-10 flex items-center gap-1.5 rounded-2xl border border-border/70 bg-card/95 px-3 py-2 text-xs leading-4 text-muted-foreground shadow-lg shadow-black/10 backdrop-blur-xl"
+        className="torob-map-attribution invisible absolute left-3 z-10 flex items-center gap-1.5 rounded-2xl border border-border/70 bg-card/95 px-3 py-2 text-xs leading-4 text-muted-foreground shadow-lg shadow-black/10 backdrop-blur-xl"
       >
         <a
           href="https://www.openstreetmap.org/copyright"
@@ -628,7 +852,7 @@ export default function MapExperience() {
         >
           © OpenMapTiles
         </a>
-      </div> */}
+      </div>
 
       <TorobCheckCharacter className="absolute top-28 left-[18%] z-10 md:top-[18%] md:left-[25%]" />
 
@@ -706,13 +930,13 @@ export default function MapExperience() {
 
                 <Badge
                   variant="outline"
-                  className="ms-auto gap-1.5 font-normal"
+                  className="ms-auto hidden gap-1.5 font-normal sm:inline-flex"
                 >
                   <span
                     className={cn(
                       "size-1.5 rounded-full",
                       mapStatus === "ready"
-                        ? "bg-primary"
+                        ? "bg-chart-2"
                         : mapStatus === "error"
                           ? "bg-destructive"
                           : "animate-pulse bg-muted-foreground"
@@ -764,7 +988,7 @@ export default function MapExperience() {
                         placeholder="نام فروشگاه، کالا یا محله"
                         autoComplete="off"
                         inputMode="search"
-                        className="relative h-11 min-w-0 rounded-xl bg-background text-sm"
+                        className="relative z-10 h-11 min-w-0 rounded-full bg-background text-sm"
                       />
                       {query && (
                         <Button
@@ -797,7 +1021,7 @@ export default function MapExperience() {
                   {searchError && (
                     <p
                       role="alert"
-                      className="rounded-xl bg-destructive/10 px-3 py-2 text-xs leading-5 text-destructive"
+                      className="mt-4 rounded-xl bg-destructive/10 px-3 py-2 text-xs leading-5 text-destructive"
                     >
                       {searchError}
                     </p>
@@ -805,7 +1029,7 @@ export default function MapExperience() {
                   {locationError && (
                     <p
                       role="status"
-                      className="rounded-xl bg-destructive/10 px-3 py-2 text-xs leading-5 text-destructive"
+                      className="mt-4 rounded-xl bg-destructive/10 px-3 py-2 text-xs leading-5 text-destructive"
                     >
                       {locationError}
                     </p>
@@ -813,7 +1037,7 @@ export default function MapExperience() {
                   {mapStatus === "error" && (
                     <p
                       role="alert"
-                      className="rounded-xl bg-destructive/10 px-3 py-2 text-xs leading-5 text-destructive"
+                      className="mt-4 rounded-xl bg-destructive/10 px-3 py-2 text-xs leading-5 text-destructive"
                     >
                       بارگذاری نقشه انجام نشد. اتصال اینترنت یا دسترسی به سرویس
                       نقشه را بررسی کنید.
@@ -822,7 +1046,7 @@ export default function MapExperience() {
                 </div>
               )}
 
-              <ScrollArea className="min-h-0 flex-1 px-2 **:data-[slot=scroll-area-viewport]:py-4 sm:px-4">
+              <ScrollArea className="min-h-0 flex-1 px-4 **:data-[slot=scroll-area-viewport]:py-4 sm:px-6">
                 {shopsStatus === "error" ? (
                   <div className="rounded-2xl bg-muted/70 px-4 py-5 text-center text-sm leading-6 text-muted-foreground">
                     اطلاعات فروشگاه‌ها بارگذاری نشد. مطمئن شوید دیتابیس آماده و
@@ -835,7 +1059,7 @@ export default function MapExperience() {
                       : "در این محدوده فروشگاهی با موقعیت ثبت‌شده پیدا نشد."}
                   </div>
                 ) : (
-                  <div className="flex flex-col gap-1">
+                  <div className="flex flex-col gap-2">
                     {nearestShops.slice(0, 80).map((shop) => {
                       const isSelected = shop.shopId === selectedShopId
                       const price = formatPrice(shop.lowestPrice)
@@ -847,43 +1071,48 @@ export default function MapExperience() {
                           aria-pressed={isSelected}
                           onClick={() => selectShop(shop)}
                           className={cn(
-                            "flex w-full items-start gap-3 rounded-2xl p-3 text-right transition-colors hover:bg-muted/70 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
-                            isSelected && "bg-primary/10"
+                            "flex w-full items-center gap-3 rounded-2xl border border-border/60 bg-background/40 p-3 text-right transition-colors hover:border-border hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
+                            isSelected && "border-primary/30 bg-primary/10"
                           )}
                         >
                           <span
                             className={cn(
-                              "mt-0.5 grid size-9 shrink-0 place-items-center rounded-xl",
+                              "grid size-10 shrink-0 place-items-center rounded-xl border border-border/60 bg-muted/70 text-muted-foreground transition-colors",
                               isSelected
-                                ? "bg-primary text-primary-foreground"
-                                : "bg-muted text-muted-foreground"
+                                ? "border-primary/20 bg-primary text-primary-foreground"
+                                : ""
                             )}
                           >
                             <Store aria-hidden="true" />
                           </span>
-                          <span className="min-w-0 flex-1">
-                            <span className="block truncate text-sm font-semibold">
-                              {shop.name || "فروشگاه بدون نام"}
-                            </span>
-                            <span className="mt-1 block truncate text-xs text-muted-foreground">
-                              {shop.locationLabel || shop.address || "تهران"}
-                            </span>
-                            <span className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted-foreground">
-                              {shop.categoryNames?.[0] && (
-                                <span className="truncate">
-                                  {shop.categoryNames[0]}
-                                </span>
-                              )}
-                              {shop.offerCount > 0 && (
-                                <span>
-                                  {persianNumber.format(shop.offerCount)} کالا
-                                </span>
-                              )}
-                              {price && (
-                                <span className="font-medium text-foreground">
-                                  از {price}
-                                </span>
-                              )}
+                          <span className="flex min-w-0 flex-1 items-center justify-between gap-3">
+                            <span className="min-w-0 flex-1">
+                              <span className="block truncate text-sm leading-5 font-semibold">
+                                {shop.name || "فروشگاه بدون نام"}
+                              </span>
+                              <span className="mt-1 block truncate text-xs leading-5 text-muted-foreground">
+                                {shop.locationLabel || shop.address || "تهران"}
+                              </span>
+                              <span className="mt-2 flex min-w-0 flex-wrap items-center gap-1.5">
+                                {shop.categoryNames?.[0] && (
+                                  <span className="min-w-0 truncate text-[11px] text-muted-foreground">
+                                    {shop.categoryNames[0]}
+                                  </span>
+                                )}
+                                {shop.offerCount > 0 && (
+                                  <Badge
+                                    variant="secondary"
+                                    className="shrink-0 px-1.5 text-[10px] font-normal"
+                                  >
+                                    {persianNumber.format(shop.offerCount)} کالا
+                                  </Badge>
+                                )}
+                                {price && (
+                                  <Badge className="shrink-0 px-1.5 text-[10px] font-normal">
+                                    از {price}
+                                  </Badge>
+                                )}
+                              </span>
                             </span>
                           </span>
                         </button>
@@ -892,50 +1121,19 @@ export default function MapExperience() {
                   </div>
                 )}
               </ScrollArea>
-
-              {selectedShop && (
-                <div className="shrink-0 border-t border-border/70 bg-muted/30 px-4 py-3 sm:px-6">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="text-xs text-muted-foreground">
-                        {selectedShop.locationLabel || "فروشگاه انتخاب‌شده"}
-                      </p>
-                      <h3 className="mt-1 truncate text-sm font-bold">
-                        {selectedShop.name || "فروشگاه بدون نام"}
-                      </h3>
-                    </div>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon-sm"
-                      aria-label="بستن جزئیات فروشگاه"
-                      onClick={() => setSelectedShopId(null)}
-                    >
-                      <X aria-hidden="true" />
-                    </Button>
-                  </div>
-                  {selectedShop.address && (
-                    <p className="mt-2 text-xs leading-5 text-muted-foreground">
-                      {selectedShop.address}
-                    </p>
-                  )}
-                  <div className="mt-2 flex items-center justify-between gap-2 rounded-xl bg-card px-3 py-2 text-xs">
-                    <span className="text-muted-foreground">
-                      {persianNumber.format(selectedShop.offerCount)} پیشنهاد
-                      کالا
-                    </span>
-                    {formatPrice(selectedShop.lowestPrice) && (
-                      <span className="font-semibold text-primary">
-                        از {formatPrice(selectedShop.lowestPrice)}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              )}
             </div>
           </DrawerContent>
         </DrawerVirtualKeyboardProvider>
       </Drawer>
+
+      {mapStatus === "ready" && selectedShop && mapRef.current ? (
+        <ShopDetailPopover
+          key={selectedShop.shopId}
+          map={mapRef.current}
+          shop={selectedShop}
+          onClose={() => clearSelectedShop(selectedShop.shopId)}
+        />
+      ) : null}
     </main>
   )
 }

@@ -5,6 +5,7 @@ import "maplibre-gl/dist/maplibre-gl.css"
 import "../components/map-experience.css"
 import { ThemeProvider } from "@/components/theme-provider"
 import { TorobCheckProvider } from "@/app/components/torob-check-provider"
+import { TooltipProvider } from "@workspace/ui/components/tooltip"
 import { cn } from "@workspace/ui/lib/utils"
 
 const fontInter = Inter({ subsets: ["latin"], variable: "--font-inter" })
@@ -33,7 +34,9 @@ export default function RootLayout({
     >
       <body>
         <TorobCheckProvider>
-          <ThemeProvider>{children}</ThemeProvider>
+          <ThemeProvider>
+            <TooltipProvider>{children}</TooltipProvider>
+          </ThemeProvider>
         </TorobCheckProvider>
       </body>
     </html>

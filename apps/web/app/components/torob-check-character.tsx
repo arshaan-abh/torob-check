@@ -20,6 +20,11 @@ import {
   type TorobCheckState,
   useTorobCheck,
 } from "@/app/components/torob-check-provider"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@workspace/ui/components/tooltip"
 
 const CHARACTER_SRC = "/radish.riv"
 const RIVE_WASM_BASE_URL = "https://unpkg.com/@rive-app/canvas-advanced@2.45.0/"
@@ -390,22 +395,30 @@ export function TorobCheckCharacter({
             role="status"
             aria-live="polite"
             aria-label="تربچِک در حال بارگذاری است"
-            className="absolute inset-0 grid place-items-center rounded-full border border-border/70 bg-card/95 shadow-lg shadow-black/10 backdrop-blur-xl"
+            className="absolute inset-0 grid place-items-center rounded-full border border-chart-2/30 bg-card/95 shadow-lg shadow-black/10 backdrop-blur-xl"
           >
             <LoaderCircle
               aria-hidden="true"
-              className="size-7 text-primary motion-safe:animate-spin"
+              className="size-7 text-chart-2 motion-safe:animate-spin"
             />
           </div>
         )}
         {loadState === "error" && (
-          <span
-            role="alert"
-            className="absolute inset-x-[-12px] bottom-0 flex items-center justify-center gap-1 rounded-full border border-destructive/20 bg-card/95 px-2 py-1 text-center text-[10px] leading-4 text-destructive shadow-lg backdrop-blur-md"
-          >
-            <CircleAlert aria-hidden="true" className="size-3 shrink-0" />
-            تربچِک بارگذاری نشد
-          </span>
+          <Tooltip>
+            <TooltipTrigger
+              type="button"
+              aria-label="تربچِک بارگذاری نشد"
+              className="pointer-events-auto absolute inset-0 grid place-items-center rounded-full border border-destructive/30 bg-card/95 shadow-lg shadow-black/10 backdrop-blur-xl focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+            >
+              <CircleAlert
+                aria-hidden="true"
+                className="size-7 text-destructive"
+              />
+            </TooltipTrigger>
+            <TooltipContent dir="rtl" className="max-w-56 text-center">
+              تربچِک بارگذاری نشد. اتصال اینترنت یا فایل انیمیشن در دسترس نیست.
+            </TooltipContent>
+          </Tooltip>
         )}
       </div>
       <figcaption dir="ltr" className="invisible">
