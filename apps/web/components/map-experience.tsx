@@ -65,10 +65,10 @@ import {
   DrawerVirtualKeyboardProvider,
 } from "@workspace/ui/components/drawer"
 import { cn } from "@workspace/ui/lib/utils"
-import { TorobCheckCharacter } from "@/app/components/torob-check-character"
+import { TorobCheckAssistant } from "@/app/components/torob-check-assistant"
 
 const OPENFREEMAP_STYLE = "https://tiles.openfreemap.org/styles/fiord"
-const COMPACT_DRAWER_SNAP_POINT = "6.25rem"
+const COMPACT_DRAWER_SNAP_POINT = "5.75rem"
 const DEFAULT_DRAWER_SNAP_POINT = 0.66
 const SELECTED_SHOP_ZOOM = 18
 const SHOP_LIST_PAGE_SIZE = 40
@@ -400,6 +400,10 @@ export default function MapExperience() {
   const [isSearching, setIsSearching] = useState(false)
   const [searchError, setSearchError] = useState<string | null>(null)
   const [locationError, setLocationError] = useState<string | null>(null)
+  const [userLocation, setUserLocation] = useState<{
+    latitude: number
+    longitude: number
+  } | null>(null)
   const [mapCenter, setMapCenter] = useState(TEHRAN_CENTER)
   const [mapBounds, setMapBounds] = useState<ShopBounds | null>(null)
   const [drawerSnapPoint, setDrawerSnapPoint] = useState<
@@ -641,6 +645,7 @@ export default function MapExperience() {
       GeoJSONSource | undefined
 
     source?.setData(emptyFeatureCollection())
+    setUserLocation(null)
   }, [])
 
   useEffect(() => {
@@ -1072,6 +1077,10 @@ export default function MapExperience() {
 
         hasUserLocationRef.current = true
         locationPermissionDeniedRef.current = false
+        setUserLocation({
+          latitude: coords.latitude,
+          longitude: coords.longitude,
+        })
 
         source.setData({
           type: "FeatureCollection",
@@ -1173,7 +1182,7 @@ export default function MapExperience() {
         data-drawer-snap={isCompactDrawer ? "peek" : "default"}
         className="torob-map-overlay absolute right-3 z-10"
       >
-        <TorobCheckCharacter className="size-[76px]" />
+        <TorobCheckAssistant location={userLocation} />
       </div>
 
       <div
@@ -1251,12 +1260,37 @@ export default function MapExperience() {
                       <Store aria-hidden="true" />
                     </span>
                     <div className="min-w-0 text-right">
-                      <DrawerTitle className="truncate text-base font-bold">
-                        {activeSearchRef.current
-                          ? "نتایج جستجو"
-                          : shopListScope === "all"
-                            ? "همهٔ فروشگاه‌ها"
-                            : "فروشگاه‌های این محدوده"}
+                      <DrawerTitle className="flex items-center gap-2 truncate text-base font-bold">
+                        فروشگاه‌های
+                        <ToggleGroup
+                          aria-label="محدودهٔ فهرست فروشگاه‌ها"
+                          onValueChange={handleShopListScopeChange}
+                          variant="outline"
+                          size="sm"
+                          spacing={0}
+                          value={[shopListScope]}
+                        >
+                          <ToggleGroupItem
+                            value="all"
+                            aria-label="نمایش همهٔ نتایج"
+                            title="نمایش همهٔ نتایج"
+                            className="h-6 rounded-full data-pressed:bg-primary"
+                          >
+                            همه جا
+                          </ToggleGroupItem>
+                          <ToggleGroupItem
+                            value="visible"
+                            aria-label="نمایش نتایج در محدودهٔ نقشه"
+                            title="نمایش فقط موارد داخل محدودهٔ قابل‌مشاهدهٔ نقشه"
+                            className="h-6 rounded-full data-pressed:bg-primary"
+                          >
+                            <MapPin
+                              aria-hidden="true"
+                              data-icon="inline-start"
+                            />
+                            این محدوده
+                          </ToggleGroupItem>
+                        </ToggleGroup>
                       </DrawerTitle>
                       <p className="mt-1 truncate text-xs text-muted-foreground">
                         تربِ حضوری / {shopCountLabel}
@@ -1329,7 +1363,7 @@ export default function MapExperience() {
                           inputMode="search"
                           className="h-11 px-4 text-sm"
                         />
-                        <InputGroupAddon align="inline-end" className="pe-1">
+                        <InputGroupAddon align="inline-start" className="ps-1">
                           <Tooltip>
                             <TooltipTrigger
                               render={
@@ -1337,7 +1371,7 @@ export default function MapExperience() {
                                   aria-label="جستجو در محدودهٔ نقشه"
                                   aria-pressed={searchWithinMap}
                                   className={cn(
-                                    "me-1.5 rounded-full",
+                                    "ms-1.5 rounded-full",
                                     searchWithinMap &&
                                       "bg-chart-3 hover:bg-chart-4"
                                   )}
@@ -1345,7 +1379,7 @@ export default function MapExperience() {
                                   size="icon-sm"
                                   type="button"
                                   variant={
-                                    searchWithinMap ? "default" : "ghost"
+                                    searchWithinMap ? "default" : "outline"
                                   }
                                 >
                                   <MapPin aria-hidden="true" />
@@ -1390,7 +1424,7 @@ export default function MapExperience() {
               </form>
 
               {(searchError || locationError || mapStatus === "error") && (
-                <div className="flex shrink-0 flex-col gap-2 px-4 pb-2 sm:px-6">
+                <div className="flex shrink-0 flex-col gap-2 px-4 sm:px-6">
                   {searchError && (
                     <p
                       role="alert"
@@ -1418,39 +1452,6 @@ export default function MapExperience() {
                   )}
                 </div>
               )}
-
-              <div className="flex shrink-0 items-center justify-between gap-3 px-4 pt-3 pb-1 sm:px-6">
-                <span className="text-xs font-medium text-muted-foreground">
-                  نمایش فهرست
-                </span>
-                <ToggleGroup
-                  aria-label="محدودهٔ فهرست فروشگاه‌ها"
-                  className="rounded-full bg-muted/50 p-1"
-                  onValueChange={handleShopListScopeChange}
-                  size="sm"
-                  spacing={1}
-                  value={[shopListScope]}
-                  variant="outline"
-                >
-                  <ToggleGroupItem
-                    value="all"
-                    aria-label="نمایش همهٔ نتایج"
-                    title="نمایش همهٔ نتایج"
-                    className="rounded-full data-[state=on]:bg-chart-2/15 data-[state=on]:text-chart-2"
-                  >
-                    همهٔ نتایج
-                  </ToggleGroupItem>
-                  <ToggleGroupItem
-                    value="visible"
-                    aria-label="نمایش نتایج در محدودهٔ نقشه"
-                    title="نمایش فقط موارد داخل محدودهٔ قابل‌مشاهدهٔ نقشه"
-                    className="rounded-full data-[state=on]:bg-chart-2/15 data-[state=on]:text-chart-2"
-                  >
-                    <MapPin aria-hidden="true" data-icon="inline-start" />
-                    در محدوده
-                  </ToggleGroupItem>
-                </ToggleGroup>
-              </div>
 
               <ScrollArea
                 className="min-h-0 flex-1 px-4 **:data-[slot=scroll-area-viewport]:py-4 sm:px-6"

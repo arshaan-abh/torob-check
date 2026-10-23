@@ -20,11 +20,6 @@ import {
   type TorobCheckState,
   useTorobCheck,
 } from "@/app/components/torob-check-provider"
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@workspace/ui/components/tooltip"
 
 const CHARACTER_SRC = "/radish.riv"
 const RIVE_WASM_BASE_URL = "https://unpkg.com/@rive-app/canvas-advanced@2.45.0/"
@@ -75,6 +70,11 @@ type PlaybackController = {
   update: (state: TorobCheckState, prefersReducedMotion: boolean) => void
 }
 
+type ActiveAnimation = {
+  name: string
+  mix: number
+}
+
 type RiveResources = {
   runtime: RiveRuntime
   file: RiveFile
@@ -84,7 +84,7 @@ type RiveResources = {
   resizeObserver: ResizeObserver
   frameId: number
   lastTimestamp: number | null
-  activeAnimations: string[]
+  activeAnimations: ActiveAnimation[]
   canvas: HTMLCanvasElement
   disposed: boolean
 }
@@ -101,12 +101,12 @@ const renderFrame = (resources: RiveResources, timestamp: number) => {
 
   resources.renderer.beginFrame()
 
-  for (const name of resources.activeAnimations) {
-    const animation = resources.animations.get(name)
+  for (const activeAnimation of resources.activeAnimations) {
+    const animation = resources.animations.get(activeAnimation.name)
     if (!animation) continue
 
     animation.advance(delta)
-    animation.apply(1)
+    animation.apply(activeAnimation.mix)
   }
 
   resources.artboard.advance(delta)
@@ -161,18 +161,29 @@ const updatePlayback = (
   state: TorobCheckState,
   prefersReducedMotion: boolean
 ) => {
-  for (const animation of resources.animations.values()) {
-    animation.time = 0
-  }
-
+  const previouslyActive = new Set(
+    resources.activeAnimations.map(({ name }) => name)
+  )
   resources.lastTimestamp = null
   resources.activeAnimations = prefersReducedMotion
     ? []
     : [
-        state.movement === "walking" ? ANIMATION.walking : ANIMATION.idle,
-        ANIMATION.blinking,
-        ...(state.speech === "talking" ? [ANIMATION.talking] : []),
+        {
+          name:
+            state.movement === "walking" ? ANIMATION.walking : ANIMATION.idle,
+          mix: 1,
+        },
+        ...(state.speech === "talking"
+          ? [{ name: ANIMATION.talking, mix: 0.7 }]
+          : []),
+        { name: ANIMATION.blinking, mix: 1 },
       ]
+
+  for (const { name } of resources.activeAnimations) {
+    if (previouslyActive.has(name)) continue
+    const animation = resources.animations.get(name)
+    if (animation) animation.time = 0
+  }
 
   if (prefersReducedMotion) {
     // Render Torob Check's idle pose once while honoring the OS motion setting.
@@ -222,6 +233,8 @@ export type TorobCheckCharacterProps = {
   /** Width and height, in pixels, of the Rive canvas. */
   size?: number
   label?: string
+  onReady?: () => void
+  onError?: () => void
 }
 
 export function TorobCheckCharacter({
@@ -229,10 +242,14 @@ export function TorobCheckCharacter({
   style,
   size = 76,
   label = "تربچِک، دستیار خرید حضوری",
+  onReady,
+  onError,
 }: TorobCheckCharacterProps) {
   const { state } = useTorobCheck()
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const playbackControllerRef = useRef<PlaybackController | null>(null)
+  const onReadyRef = useRef(onReady)
+  const onErrorRef = useRef(onError)
   const playbackStateRef = useRef(state)
   const prefersReducedMotion = useSyncExternalStore(
     subscribeToReducedMotion,
@@ -246,6 +263,8 @@ export function TorobCheckCharacter({
 
   playbackStateRef.current = state
   reducedMotionRef.current = prefersReducedMotion
+  onReadyRef.current = onReady
+  onErrorRef.current = onError
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -357,10 +376,14 @@ export function TorobCheckCharacter({
           reducedMotionRef.current
         )
         setLoadState("ready")
+        onReadyRef.current?.()
       } catch {
         if (resources) disposeResources(resources)
         else cleanupPartialResources()
-        if (!cancelled) setLoadState("error")
+        if (!cancelled) {
+          setLoadState("error")
+          onErrorRef.current?.()
+        }
       }
     })()
 
@@ -404,21 +427,17 @@ export function TorobCheckCharacter({
           </div>
         )}
         {loadState === "error" && (
-          <Tooltip>
-            <TooltipTrigger
-              type="button"
-              aria-label="تربچِک بارگذاری نشد"
-              className="pointer-events-auto absolute inset-0 grid place-items-center rounded-full border border-destructive/30 bg-card/95 shadow-lg shadow-black/10 backdrop-blur-xl focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-            >
-              <CircleAlert
-                aria-hidden="true"
-                className="size-7 text-destructive"
-              />
-            </TooltipTrigger>
-            <TooltipContent dir="rtl" className="max-w-56 text-center">
-              تربچِک بارگذاری نشد. اتصال اینترنت یا فایل انیمیشن در دسترس نیست.
-            </TooltipContent>
-          </Tooltip>
+          <div
+            role="status"
+            aria-live="polite"
+            aria-label="تربچِک بارگذاری نشد"
+            className="absolute inset-0 grid place-items-center rounded-full border border-destructive/30 bg-card/95 shadow-lg shadow-black/10 backdrop-blur-xl"
+          >
+            <CircleAlert
+              aria-hidden="true"
+              className="size-7 text-destructive"
+            />
+          </div>
         )}
       </div>
       <figcaption dir="ltr" className="invisible">
