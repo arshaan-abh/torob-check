@@ -461,7 +461,7 @@ export function ShoppingAssistantPanel({
         </div>
       </ScrollArea>
       <form
-        className="flex items-end gap-2 border-t border-border/70 p-3"
+        className="relative border-t border-border/70 p-3"
         onSubmit={submit}
       >
         <label className="sr-only" htmlFor="assistant-message">
@@ -469,7 +469,7 @@ export function ShoppingAssistantPanel({
         </label>
         <textarea
           id="assistant-message"
-          className="max-h-28 min-h-11 flex-1 resize-none rounded-xl border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="max-h-28 min-h-14 w-full resize-none rounded-xl border border-input bg-background px-3 py-2 pe-12 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
           value={input}
           onChange={(event) => setInput(event.target.value)}
           onKeyDown={(event) => {
@@ -486,6 +486,7 @@ export function ShoppingAssistantPanel({
             type="button"
             variant="outline"
             size="icon"
+            className="absolute bottom-4 left-4"
             aria-label="توقف پاسخ"
             onClick={stop}
           >
@@ -495,6 +496,7 @@ export function ShoppingAssistantPanel({
           <Button
             type="submit"
             size="icon"
+            className="absolute bottom-4 left-4"
             aria-label="ارسال پیام"
             disabled={!input.trim()}
           >
