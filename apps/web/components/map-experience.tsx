@@ -1458,7 +1458,7 @@ export default function MapExperience() {
             }}
           >
             <DrawerSwipeRegion className="h-20">
-              <DrawerHeader className="h-full gap-0 px-4 pt-1 pb-3 text-right sm:px-6">
+              <DrawerHeader className="h-full gap-0 px-3 pt-1 pb-3 text-right sm:px-6">
                 <div className="flex items-center justify-between gap-3">
                   <div className="flex min-w-0 items-center gap-3">
                     <span className="grid size-10 shrink-0 place-items-center rounded-2xl bg-primary/10 text-primary">
@@ -1511,7 +1511,7 @@ export default function MapExperience() {
                     aria-label={drawerExpandLabel}
                     title={drawerExpandLabel}
                     onClick={advanceDrawerSnapPoint}
-                    className="shrink-0 rounded-xl"
+                    className="hidden shrink-0 rounded-xl sm:inline-flex"
                   >
                     {isCompactDrawer ? (
                       <ChevronUp aria-hidden="true" />

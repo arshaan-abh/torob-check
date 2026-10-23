@@ -9,6 +9,7 @@ import {
   ExternalLink,
   LoaderCircle,
   MapPin,
+  MessageCircleText,
   Search,
   Sparkles,
   Square,
@@ -1010,7 +1011,7 @@ export function TorobCheckAssistant({
         collisionAvoidance={{ side: "none", fallbackAxisSide: "none" }}
         sideOffset={10}
         collisionPadding={12}
-        className="flex h-[min(29rem,calc(100dvh-5rem))] w-[min(23rem,calc(100vw-1.5rem))] max-w-[calc(100vw-1.5rem)] flex-col gap-0 overflow-visible rounded-[2.3125rem] border-border/70 bg-card/95 p-0 shadow-2xl ring-1 shadow-black/20 ring-border/50 backdrop-blur-xl"
+        className="flex h-[min(24rem,calc(100dvh-7rem))] w-[min(23rem,calc(100vw-1.5rem))] max-w-[calc(100vw-1.5rem)] flex-col gap-0 overflow-visible rounded-[2.3125rem] border-border/70 bg-card/95 p-0 shadow-2xl ring-1 shadow-black/20 ring-border/50 backdrop-blur-xl sm:h-[min(29rem,calc(100dvh-5rem))]"
       >
         <PopoverHeader className="flex-row items-center gap-3 border-b border-border/60 bg-muted/20 px-4 py-3">
           <Avatar
@@ -1018,7 +1019,7 @@ export function TorobCheckAssistant({
             className="size-9 rounded-xl bg-primary/10 ring-1 ring-primary/10"
           >
             <AvatarFallback className="rounded-xl bg-primary/10 text-primary">
-              <Bot aria-hidden="true" />
+              <MessageCircleText aria-hidden="true" />
             </AvatarFallback>
           </Avatar>
           <div className="min-w-0 flex-1">
@@ -1061,6 +1062,7 @@ export function TorobCheckAssistant({
             <MessageScrollerViewport
               aria-label="گفت‌وگو با ترب‌چک"
               aria-live="polite"
+              className="flex-1"
             >
               <MessageScrollerContent className="gap-4 px-4 py-4">
                 {messages.map((message) => {
@@ -1165,10 +1167,12 @@ export function TorobCheckAssistant({
                 })}
               </MessageScrollerContent>
             </MessageScrollerViewport>
-            <MessageScrollerButton
-              aria-label="رفتن به تازه‌ترین پیام"
-              className="size-8 border-border/60 bg-card shadow-sm"
-            />
+            <div className="pointer-events-none absolute inset-x-0 bottom-0 flex justify-center pb-4">
+              <MessageScrollerButton
+                aria-label="رفتن به تازه‌ترین پیام"
+                className="pointer-events-auto relative inset-auto size-8 translate-x-0 border-border/60 bg-card shadow-sm data-[direction=end]:bottom-auto data-[direction=start]:top-auto rtl:translate-x-0"
+              />
+            </div>
           </MessageScroller>
         </MessageScrollerProvider>
 
@@ -1265,7 +1269,7 @@ export function TorobCheckAssistant({
                   disabled={!historyLoaded || isBusy}
                   onChange={(event) => setInput(event.target.value)}
                   onKeyDown={handleInputKeyDown}
-                  placeholder="دنبال چه محصولی هستی؟"
+                  placeholder="مثلاً: یک کفش قرمز نزدیکم پیدا کن"
                   className="max-h-28 min-h-12 px-3 py-3 text-sm leading-5"
                 />
                 <InputGroupAddon align="block-end" className="justify-end p-2">
