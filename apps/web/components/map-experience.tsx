@@ -1,14 +1,8 @@
 "use client"
 
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  useTransition,
-} from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import type { FormEvent } from "react"
+import { useVirtualizer } from "@tanstack/react-virtual"
 import type { GeoJSONSource, Map as MapLibreMap } from "maplibre-gl"
 import {
   ChevronDown,
@@ -71,7 +65,6 @@ const OPENFREEMAP_STYLE = "https://tiles.openfreemap.org/styles/fiord"
 const COMPACT_DRAWER_SNAP_POINT = "6.25rem"
 const DEFAULT_DRAWER_SNAP_POINT = 0.66
 const SELECTED_SHOP_ZOOM = 18
-const SHOP_LIST_PAGE_SIZE = 40
 const SHOP_LIST_LOAD_AHEAD_PX = 240
 const SHOP_POPOVER_COLLISION_PADDING = {
   top: 70,
@@ -111,8 +104,14 @@ type ShopBounds = {
 
 type ShopResponse = {
   shops: Shop[]
-  total: number
   truncated: boolean
+  error?: string
+}
+
+type ShopPageResponse = {
+  shops: Shop[]
+  total?: number
+  nextCursor: string | null
   error?: string
 }
 
@@ -162,40 +161,6 @@ function getShopBounds(map: MapLibreMap): ShopBounds {
     east: bounds.getEast(),
     north: bounds.getNorth(),
   }
-}
-
-function getShopBoundsKey(bounds: ShopBounds | null) {
-  if (!bounds) return "no-map-bounds"
-
-  return [bounds.west, bounds.south, bounds.east, bounds.north]
-    .map((value) => value.toFixed(5))
-    .join(",")
-}
-
-function getShopListPageKey(
-  requestKey: string,
-  scope: ShopListScope,
-  bounds: ShopBounds | null
-) {
-  return scope === "all"
-    ? `${requestKey}|all`
-    : `${requestKey}|visible|${getShopBoundsKey(bounds)}`
-}
-
-function isShopInBounds(shop: Shop, bounds: ShopBounds) {
-  return (
-    shop.lon >= bounds.west &&
-    shop.lon <= bounds.east &&
-    shop.lat >= bounds.south &&
-    shop.lat <= bounds.north
-  )
-}
-
-function formatShopCount(total: number, truncated: boolean) {
-  const count = persianNumber.format(total)
-  return truncated
-    ? `${count} فروشگاه · بخشی از فهرست بارگذاری شده`
-    : `${count} فروشگاه`
 }
 
 function ShopListSkeleton() {
@@ -361,8 +326,10 @@ function ShopDetailPopover({
 
 export default function MapExperience() {
   const mapContainerRef = useRef<HTMLDivElement>(null)
+  const shopListScrollAreaRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<MapLibreMap | null>(null)
   const requestRef = useRef<AbortController | null>(null)
+  const shopListRequestRef = useRef<AbortController | null>(null)
   const activeSearchRef = useRef("")
   const activeSearchWithinMapRef = useRef(false)
   const selectedShopIdRef = useRef<string | null>(null)
@@ -370,20 +337,24 @@ export default function MapExperience() {
   const activeShopRequestKeyRef = useRef<string | null>(null)
   const lastSuccessfulShopRequestKeyRef = useRef<string | null>(null)
   const hasLoadedShopsRef = useRef(false)
+  const activeShopListRequestKeyRef = useRef<string | null>(null)
+  const lastSuccessfulShopListRequestKeyRef = useRef<string | null>(null)
+  const hasLoadedShopListRef = useRef(false)
   const shopListScopeRef = useRef<ShopListScope>("visible")
   const shopsRef = useRef<Shop[]>([])
   const hasUserLocationRef = useRef(false)
   const locationPermissionDeniedRef = useRef(false)
 
   const [shops, setShops] = useState<Shop[]>([])
-  const [shopListPageCounts, setShopListPageCounts] = useState<
-    Record<string, number>
-  >({})
-  const [shopsRequestKey, setShopsRequestKey] = useState("")
+  const [shopListItems, setShopListItems] = useState<Shop[]>([])
+  const [shopListRequestKey, setShopListRequestKey] = useState("")
+  const [shopListNextCursor, setShopListNextCursor] = useState<string | null>(
+    null
+  )
+  const [shopListTotal, setShopListTotal] = useState(0)
   const [shopListScope, setShopListScope] = useState<ShopListScope>("visible")
   const [isLoadingMoreShops, setIsLoadingMoreShops] = useState(false)
-  const [, startTransition] = useTransition()
-  const [totalShops, setTotalShops] = useState(0)
+  const [shopListPageError, setShopListPageError] = useState(false)
   const [shopsTruncated, setShopsTruncated] = useState(false)
   const [shopsStatus, setShopsStatus] = useState<"loading" | "ready" | "error">(
     "loading"
@@ -400,8 +371,6 @@ export default function MapExperience() {
   const [isSearching, setIsSearching] = useState(false)
   const [searchError, setSearchError] = useState<string | null>(null)
   const [locationError, setLocationError] = useState<string | null>(null)
-  const [mapCenter, setMapCenter] = useState(TEHRAN_CENTER)
-  const [mapBounds, setMapBounds] = useState<ShopBounds | null>(null)
   const [drawerSnapPoint, setDrawerSnapPoint] = useState<
     number | string | null
   >(DEFAULT_DRAWER_SNAP_POINT)
@@ -415,46 +384,29 @@ export default function MapExperience() {
     return () => window.cancelAnimationFrame(animationFrame)
   }, [])
 
-  const selectedShop = shops.find((shop) => shop.shopId === selectedShopId)
+  const selectedShop =
+    shops.find((shop) => shop.shopId === selectedShopId) ??
+    shopListItems.find((shop) => shop.shopId === selectedShopId)
   shopsRef.current = shops
-  const listShops = useMemo(() => {
-    if (shopListScope === "all" || !mapBounds) return shops
+  const displayedShops = shopListItems
+  const shopListVirtualizer = useVirtualizer({
+    count: displayedShops.length,
+    getScrollElement: () =>
+      shopListScrollAreaRef.current?.querySelector<HTMLElement>(
+        '[data-slot="scroll-area-viewport"]'
+      ) ?? null,
+    estimateSize: () => 112,
+    getItemKey: (index) => displayedShops[index]?.shopId ?? index,
+    gap: 8,
+    overscan: 8,
+  })
 
-    return shops.filter((shop) => isShopInBounds(shop, mapBounds))
-  }, [mapBounds, shopListScope, shops])
-  const displayedShops = useMemo(() => {
-    if (shopListScope === "all") return listShops
-
-    const longitudeScale = Math.cos((mapCenter[1] * Math.PI) / 180)
-
-    return [...listShops].sort((first, second) => {
-      const firstLongitude = (first.lon - mapCenter[0]) * longitudeScale
-      const firstLatitude = first.lat - mapCenter[1]
-      const secondLongitude = (second.lon - mapCenter[0]) * longitudeScale
-      const secondLatitude = second.lat - mapCenter[1]
-
-      return (
-        firstLongitude ** 2 +
-        firstLatitude ** 2 -
-        (secondLongitude ** 2 + secondLatitude ** 2)
-      )
-    })
-  }, [listShops, mapCenter, shopListScope])
-  const shopListPageKey = getShopListPageKey(
-    shopsRequestKey,
-    shopListScope,
-    shopListScope === "visible" ? mapBounds : null
-  )
-  const visibleShopCount =
-    shopListPageCounts[shopListPageKey] ?? SHOP_LIST_PAGE_SIZE
-
-  const loadShops = useCallback(
+  const loadMapShops = useCallback(
     async (
       map: MapLibreMap,
       searchTerm = "",
       withinMap = false,
-      preserveListState = true,
-      resetPagination = true
+      preserveMapState = true
     ) => {
       const searchParams = new URLSearchParams()
       const viewportBounds = getShopBounds(map)
@@ -473,7 +425,7 @@ export default function MapExperience() {
       const requestKey = searchParams.toString()
 
       if (
-        preserveListState &&
+        preserveMapState &&
         (lastSuccessfulShopRequestKeyRef.current === requestKey ||
           (requestRef.current &&
             !requestRef.current.signal.aborted &&
@@ -487,34 +439,15 @@ export default function MapExperience() {
       const controller = new AbortController()
       requestRef.current = controller
       activeShopRequestKeyRef.current = requestKey
-      const keepCurrentList = preserveListState && hasLoadedShopsRef.current
+      const keepCurrentMap = preserveMapState && hasLoadedShopsRef.current
 
-      if (keepCurrentList) {
-        setShopsStatus("ready")
-      } else {
-        setShopsStatus("loading")
-        setShopListPageCounts((currentCounts) => {
-          const nextCounts = { ...currentCounts }
-          const pageKeys = [
-            getShopListPageKey(requestKey, "all", null),
-            getShopListPageKey(requestKey, "visible", viewportBounds),
-          ]
-
-          for (const pageKey of pageKeys) {
-            if (resetPagination || nextCounts[pageKey] === undefined) {
-              nextCounts[pageKey] = SHOP_LIST_PAGE_SIZE
-            }
-          }
-
-          return nextCounts
-        })
-        setIsLoadingMoreShops(false)
+      if (!keepCurrentMap) {
+        hasLoadedShopsRef.current = false
+        lastSuccessfulShopRequestKeyRef.current = null
       }
 
-      setSearchError(null)
-
       try {
-        const response = await fetch(`/api/shops?${searchParams}`, {
+        const response = await fetch(`/api/shops/map?${searchParams}`, {
           cache: "no-store",
           signal: controller.signal,
         })
@@ -527,16 +460,13 @@ export default function MapExperience() {
         if (controller.signal.aborted) return null
 
         lastSuccessfulShopRequestKeyRef.current = requestKey
-        setShopsRequestKey(requestKey)
         if (requestRef.current === controller) {
           requestRef.current = null
           activeShopRequestKeyRef.current = null
         }
         hasLoadedShopsRef.current = true
         setShops(result.shops)
-        setTotalShops(result.total)
         setShopsTruncated(result.truncated)
-        setShopsStatus("ready")
 
         const source = map.getSource(SHOP_SOURCE_ID) as
           GeoJSONSource | undefined
@@ -551,7 +481,7 @@ export default function MapExperience() {
           activeShopRequestKeyRef.current = null
         }
 
-        if (keepCurrentList) {
+        if (keepCurrentMap) {
           setSearchError(
             "به‌روزرسانی فروشگاه‌ها انجام نشد. اطلاعات قبلی همچنان نمایش داده می‌شود."
           )
@@ -559,10 +489,9 @@ export default function MapExperience() {
         }
 
         hasLoadedShopsRef.current = false
+        lastSuccessfulShopRequestKeyRef.current = null
         setShops([])
-        setTotalShops(0)
         setShopsTruncated(false)
-        setShopsStatus("error")
         setSearchError(
           "اطلاعات فروشگاه‌ها در دسترس نیست. اتصال دیتابیس را بررسی کنید."
         )
@@ -577,30 +506,213 @@ export default function MapExperience() {
     []
   )
 
-  const loadMoreShops = useCallback(() => {
-    if (isLoadingMoreShops || visibleShopCount >= displayedShops.length) return
+  const loadShopList = useCallback(
+    async (
+      map: MapLibreMap,
+      searchTerm = "",
+      withinMap = false,
+      preserveListState = true
+    ) => {
+      const searchParams = new URLSearchParams()
+      const viewportBounds = getShopBounds(map)
 
-    const nextShopCount = Math.min(
-      visibleShopCount + SHOP_LIST_PAGE_SIZE,
-      displayedShops.length
-    )
+      if (searchTerm) searchParams.set("q", searchTerm)
 
-    setIsLoadingMoreShops(true)
-    startTransition(() => {
-      setShopListPageCounts((currentCounts) => ({
-        ...currentCounts,
-        [shopListPageKey]: nextShopCount,
-      }))
+      if (withinMap || shopListScopeRef.current === "visible") {
+        searchParams.set("west", String(viewportBounds.west))
+        searchParams.set("south", String(viewportBounds.south))
+        searchParams.set("east", String(viewportBounds.east))
+        searchParams.set("north", String(viewportBounds.north))
+      } else {
+        searchParams.set("all", "1")
+      }
+
+      if (shopListScopeRef.current === "visible") {
+        const center = map.getCenter()
+        searchParams.set("sort", "distance")
+        searchParams.set("centerLon", String(center.lng))
+        searchParams.set("centerLat", String(center.lat))
+      }
+
+      const requestKey = searchParams.toString()
+
+      if (
+        preserveListState &&
+        (lastSuccessfulShopListRequestKeyRef.current === requestKey ||
+          (shopListRequestRef.current &&
+            !shopListRequestRef.current.signal.aborted &&
+            activeShopListRequestKeyRef.current === requestKey))
+      ) {
+        return null
+      }
+
+      shopListRequestRef.current?.abort()
+
+      const controller = new AbortController()
+      shopListRequestRef.current = controller
+      activeShopListRequestKeyRef.current = requestKey
+      const keepCurrentList = preserveListState && hasLoadedShopListRef.current
+
+      if (!keepCurrentList) {
+        hasLoadedShopListRef.current = false
+        lastSuccessfulShopListRequestKeyRef.current = null
+      }
+
       setIsLoadingMoreShops(false)
-    })
-  }, [
-    isLoadingMoreShops,
-    displayedShops.length,
-    shopListPageKey,
-    setShopListPageCounts,
-    startTransition,
-    visibleShopCount,
-  ])
+      setShopListPageError(false)
+      if (keepCurrentList) {
+        setShopsStatus("ready")
+      } else {
+        setShopListNextCursor(null)
+        setShopsStatus("loading")
+        setShopListItems([])
+        setShopListTotal(0)
+        setShopListRequestKey(requestKey)
+      }
+
+      try {
+        const response = await fetch(`/api/shops?${searchParams}`, {
+          cache: "no-store",
+          signal: controller.signal,
+        })
+        const result = (await response.json()) as ShopPageResponse
+
+        if (!response.ok) {
+          throw new Error(result.error ?? "Shop data could not be loaded.")
+        }
+
+        if (controller.signal.aborted) return null
+
+        lastSuccessfulShopListRequestKeyRef.current = requestKey
+        hasLoadedShopListRef.current = true
+        const scrollViewport =
+          shopListScrollAreaRef.current?.querySelector<HTMLElement>(
+            '[data-slot="scroll-area-viewport"]'
+          )
+        if (scrollViewport) scrollViewport.scrollTop = 0
+        setShopListItems(result.shops)
+        setShopListTotal(result.total ?? 0)
+        setShopListNextCursor(result.nextCursor)
+        setShopListRequestKey(requestKey)
+        setShopsStatus("ready")
+
+        if (shopListRequestRef.current === controller) {
+          shopListRequestRef.current = null
+          activeShopListRequestKeyRef.current = null
+        }
+
+        return result
+      } catch {
+        if (controller.signal.aborted) return null
+
+        if (shopListRequestRef.current === controller) {
+          shopListRequestRef.current = null
+          activeShopListRequestKeyRef.current = null
+        }
+
+        if (keepCurrentList) {
+          setSearchError(
+            "به‌روزرسانی فهرست انجام نشد. اطلاعات قبلی همچنان نمایش داده می‌شود."
+          )
+          return null
+        }
+
+        hasLoadedShopListRef.current = false
+        lastSuccessfulShopListRequestKeyRef.current = null
+        setShopListItems([])
+        setShopListTotal(0)
+        setShopListNextCursor(null)
+        setShopsStatus("error")
+        setSearchError(
+          "اطلاعات فروشگاه‌ها در دسترس نیست. اتصال دیتابیس را بررسی کنید."
+        )
+
+        return null
+      }
+    },
+    []
+  )
+
+  const loadShops = useCallback(
+    async (
+      map: MapLibreMap,
+      searchTerm = "",
+      withinMap = false,
+      preserveListState = true
+    ) => {
+      setSearchError(null)
+
+      const [mapResult] = await Promise.all([
+        loadMapShops(map, searchTerm, withinMap, preserveListState),
+        loadShopList(map, searchTerm, withinMap, preserveListState),
+      ])
+
+      return mapResult
+    },
+    [loadMapShops, loadShopList]
+  )
+
+  const loadMoreShops = useCallback(
+    async (retry = false) => {
+      if (
+        !shopListNextCursor ||
+        isLoadingMoreShops ||
+        !shopListRequestKey ||
+        shopsStatus !== "ready" ||
+        (shopListRequestRef.current &&
+          !shopListRequestRef.current.signal.aborted) ||
+        (shopListPageError && !retry)
+      ) {
+        return
+      }
+
+      const controller = new AbortController()
+      shopListRequestRef.current = controller
+      activeShopListRequestKeyRef.current = shopListRequestKey
+      setIsLoadingMoreShops(true)
+      setShopListPageError(false)
+      setSearchError(null)
+
+      const searchParams = new URLSearchParams(shopListRequestKey)
+      searchParams.set("cursor", shopListNextCursor)
+
+      try {
+        const response = await fetch(`/api/shops?${searchParams}`, {
+          cache: "no-store",
+          signal: controller.signal,
+        })
+        const result = (await response.json()) as ShopPageResponse
+
+        if (!response.ok) {
+          throw new Error(result.error ?? "More shops could not be loaded.")
+        }
+
+        if (controller.signal.aborted) return
+
+        setShopListItems((currentItems) => [...currentItems, ...result.shops])
+        setShopListNextCursor(result.nextCursor)
+        setIsLoadingMoreShops(false)
+        setShopListPageError(false)
+      } catch {
+        if (controller.signal.aborted) return
+
+        setIsLoadingMoreShops(false)
+        setShopListPageError(true)
+      } finally {
+        if (shopListRequestRef.current === controller) {
+          shopListRequestRef.current = null
+          activeShopListRequestKeyRef.current = null
+        }
+      }
+    },
+    [
+      isLoadingMoreShops,
+      shopListNextCursor,
+      shopListPageError,
+      shopListRequestKey,
+      shopsStatus,
+    ]
+  )
 
   const selectShop = useCallback((shop: Shop) => {
     const map = mapRef.current
@@ -609,6 +721,15 @@ export default function MapExperience() {
     setDrawerSnapPoint(COMPACT_DRAWER_SNAP_POINT)
 
     if (!map) return
+
+    if (!shopsRef.current.some((item) => item.shopId === shop.shopId)) {
+      const nextShops = [...shopsRef.current, shop]
+      shopsRef.current = nextShops
+      setShops(nextShops)
+
+      const source = map.getSource(SHOP_SOURCE_ID) as GeoJSONSource | undefined
+      source?.setData(makeShopFeatures(nextShops))
+    }
 
     const targetZoom = Math.max(map.getZoom(), SELECTED_SHOP_ZOOM)
     const currentCenter = map.getCenter()
@@ -826,14 +947,17 @@ export default function MapExperience() {
           })
 
           activeMap.on("moveend", () => {
-            if (activeMap) {
-              const center = activeMap.getCenter()
-              setMapCenter([center.lng, center.lat])
-              setMapBounds(getShopBounds(activeMap))
-            }
-
-            if (Date.now() < suppressShopSelectionMoveEndsUntilRef.current)
+            if (Date.now() < suppressShopSelectionMoveEndsUntilRef.current) {
+              if (shopListScopeRef.current === "visible") {
+                void loadShopList(
+                  activeMap!,
+                  activeSearchRef.current,
+                  activeSearchWithinMapRef.current,
+                  true
+                )
+              }
               return
+            }
 
             if (activeSearchWithinMapRef.current && activeSearchRef.current) {
               void loadShops(
@@ -847,11 +971,20 @@ export default function MapExperience() {
               shopListScopeRef.current === "visible"
             ) {
               void loadShops(activeMap!, "", false, true)
+            } else if (
+              activeSearchRef.current &&
+              shopListScopeRef.current === "visible"
+            ) {
+              void loadShopList(
+                activeMap!,
+                activeSearchRef.current,
+                activeSearchWithinMapRef.current,
+                true
+              )
             }
           })
 
           setMapStatus("ready")
-          setMapBounds(getShopBounds(activeMap))
           void loadShops(activeMap)
         })
       } catch {
@@ -864,10 +997,11 @@ export default function MapExperience() {
     return () => {
       disposed = true
       requestRef.current?.abort()
+      shopListRequestRef.current?.abort()
       activeMap?.remove()
       mapRef.current = null
     }
-  }, [loadShops, selectShop])
+  }, [loadShopList, loadShops, selectShop])
 
   useEffect(() => {
     if (!navigator.permissions?.query) return
@@ -935,11 +1069,7 @@ export default function MapExperience() {
     selectedShopIdRef.current = selectedShopId
   }, [selectedShopId, shops])
 
-  const searchShops = async (
-    searchTerm: string,
-    withinMap: boolean,
-    resetPagination = true
-  ) => {
+  const searchShops = async (searchTerm: string, withinMap: boolean) => {
     const map = mapRef.current
 
     if (!map) return
@@ -951,13 +1081,7 @@ export default function MapExperience() {
     setIsSearching(true)
     setDrawerSnapPoint(DEFAULT_DRAWER_SNAP_POINT)
 
-    const result = await loadShops(
-      map,
-      searchTerm,
-      withinMap,
-      false,
-      resetPagination
-    )
+    const result = await loadShops(map, searchTerm, withinMap, false)
     setIsSearching(false)
 
     if (!result || !searchTerm || withinMap || result.shops.length === 0) return
@@ -1022,7 +1146,7 @@ export default function MapExperience() {
     const activeSearch = activeSearchRef.current
 
     if (activeSearch && activeSearch === query.trim()) {
-      void searchShops(activeSearch, nextSearchWithinMap, false)
+      void searchShops(activeSearch, nextSearchWithinMap)
     }
   }
 
@@ -1035,10 +1159,20 @@ export default function MapExperience() {
     shopListScopeRef.current = nextScope
     setShopListScope(nextScope)
 
-    if (activeSearchRef.current) return
-
     const map = mapRef.current
-    if (map) void loadShops(map, "", false, false, false)
+    if (!map) return
+
+    if (activeSearchRef.current) {
+      void loadShopList(
+        map,
+        activeSearchRef.current,
+        activeSearchWithinMapRef.current,
+        false
+      )
+      return
+    }
+
+    void loadShops(map, "", false, false)
   }
 
   const clearSearch = () => {
@@ -1114,8 +1248,8 @@ export default function MapExperience() {
 
   const shopCountLabel =
     shopListScope === "all"
-      ? formatShopCount(totalShops, shopsTruncated)
-      : `${persianNumber.format(displayedShops.length)}${shopsTruncated ? "+" : ""} ${activeSearchRef.current ? "نتیجه" : "فروشگاه"} در نمای نقشه`
+      ? `${persianNumber.format(shopListTotal)} فروشگاه`
+      : `${persianNumber.format(shopListTotal)} ${activeSearchRef.current ? "نتیجه" : "فروشگاه"} در نمای نقشه`
 
   const isCompactDrawer = drawerSnapPoint === COMPACT_DRAWER_SNAP_POINT
   const drawerExpandLabel = isCompactDrawer
@@ -1389,7 +1523,10 @@ export default function MapExperience() {
                 </FieldGroup>
               </form>
 
-              {(searchError || locationError || mapStatus === "error") && (
+              {(searchError ||
+                locationError ||
+                mapStatus === "error" ||
+                shopsTruncated) && (
                 <div className="flex shrink-0 flex-col gap-2 px-4 pb-2 sm:px-6">
                   {searchError && (
                     <p
@@ -1414,6 +1551,15 @@ export default function MapExperience() {
                     >
                       بارگذاری نقشه انجام نشد. اتصال اینترنت یا دسترسی به سرویس
                       نقشه را بررسی کنید.
+                    </p>
+                  )}
+                  {shopsTruncated && (
+                    <p
+                      role="status"
+                      className="mt-4 rounded-xl bg-muted px-3 py-2 text-xs leading-5 text-muted-foreground"
+                    >
+                      نقشه حداکثر ۱۰٬۰۰۰ فروشگاه را نشان می‌دهد؛ فهرست کامل از
+                      همین‌جا صفحه‌به‌صفحه بارگذاری می‌شود.
                     </p>
                   )}
                 </div>
@@ -1453,6 +1599,7 @@ export default function MapExperience() {
               </div>
 
               <ScrollArea
+                ref={shopListScrollAreaRef}
                 className="min-h-0 flex-1 px-4 **:data-[slot=scroll-area-viewport]:py-4 sm:px-6"
                 onScrollCapture={(event) => {
                   const viewport = event.target
@@ -1488,66 +1635,103 @@ export default function MapExperience() {
                         : "فروشگاهی با موقعیت ثبت‌شده پیدا نشد."}
                   </div>
                 ) : (
-                  <div className="flex flex-col gap-2">
-                    {displayedShops.slice(0, visibleShopCount).map((shop) => {
-                      const isSelected = shop.shopId === selectedShopId
-                      const price = formatPrice(shop.lowestPrice)
+                  <div
+                    className="relative w-full"
+                    style={{ height: shopListVirtualizer.getTotalSize() }}
+                  >
+                    {shopListVirtualizer
+                      .getVirtualItems()
+                      .map((virtualShop) => {
+                        const shop = displayedShops[virtualShop.index]
 
-                      return (
-                        <button
-                          key={shop.shopId}
-                          type="button"
-                          aria-pressed={isSelected}
-                          onClick={() => selectShop(shop)}
-                          className={cn(
-                            "flex w-full items-center gap-3 rounded-2xl border border-border/60 bg-background/40 p-3 text-right transition-colors hover:border-border hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
-                            isSelected && "border-primary/30 bg-primary/10"
-                          )}
-                        >
-                          <span
+                        if (!shop) return null
+
+                        const isSelected = shop.shopId === selectedShopId
+                        const price = formatPrice(shop.lowestPrice)
+
+                        return (
+                          <button
+                            ref={shopListVirtualizer.measureElement}
+                            data-index={virtualShop.index}
+                            key={shop.shopId}
+                            type="button"
+                            aria-pressed={isSelected}
+                            style={{
+                              position: "absolute",
+                              top: 0,
+                              left: 0,
+                              width: "100%",
+                              transform: `translateY(${virtualShop.start}px)`,
+                            }}
+                            onClick={() => selectShop(shop)}
                             className={cn(
-                              "grid size-10 shrink-0 place-items-center rounded-xl border border-border/60 bg-muted/70 text-muted-foreground transition-colors",
-                              isSelected
-                                ? "border-primary/20 bg-primary text-primary-foreground"
-                                : ""
+                              "flex w-full items-center gap-3 rounded-2xl border border-border/60 bg-background/40 p-3 text-right transition-colors hover:border-border hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
+                              isSelected && "border-primary/30 bg-primary/10"
                             )}
                           >
-                            <Store aria-hidden="true" />
-                          </span>
-                          <span className="flex min-w-0 flex-1 items-center justify-between gap-3">
-                            <span className="min-w-0 flex-1">
-                              <span className="block truncate text-sm leading-5 font-semibold">
-                                {shop.name || "فروشگاه بدون نام"}
-                              </span>
-                              <span className="mt-1 block truncate text-xs leading-5 text-muted-foreground">
-                                {shop.locationLabel || shop.address || "تهران"}
-                              </span>
-                              <span className="mt-2 flex min-w-0 flex-wrap items-center gap-1.5">
-                                {shop.categoryNames?.[0] && (
-                                  <span className="min-w-0 truncate text-[11px] text-muted-foreground">
-                                    {shop.categoryNames[0]}
-                                  </span>
-                                )}
-                                {shop.offerCount > 0 && (
-                                  <Badge
-                                    variant="secondary"
-                                    className="shrink-0 px-1.5 text-[10px] font-normal"
-                                  >
-                                    {persianNumber.format(shop.offerCount)} کالا
-                                  </Badge>
-                                )}
-                                {price && (
-                                  <Badge className="shrink-0 px-1.5 text-[10px] font-normal">
-                                    از {price}
-                                  </Badge>
-                                )}
+                            <span
+                              className={cn(
+                                "grid size-10 shrink-0 place-items-center rounded-xl border border-border/60 bg-muted/70 text-muted-foreground transition-colors",
+                                isSelected
+                                  ? "border-primary/20 bg-primary text-primary-foreground"
+                                  : ""
+                              )}
+                            >
+                              <Store aria-hidden="true" />
+                            </span>
+                            <span className="flex min-w-0 flex-1 items-center justify-between gap-3">
+                              <span className="min-w-0 flex-1">
+                                <span className="block truncate text-sm leading-5 font-semibold">
+                                  {shop.name || "فروشگاه بدون نام"}
+                                </span>
+                                <span className="mt-1 block truncate text-xs leading-5 text-muted-foreground">
+                                  {shop.locationLabel ||
+                                    shop.address ||
+                                    "تهران"}
+                                </span>
+                                <span className="mt-2 flex min-w-0 flex-wrap items-center gap-1.5">
+                                  {shop.categoryNames?.[0] && (
+                                    <span className="min-w-0 truncate text-[11px] text-muted-foreground">
+                                      {shop.categoryNames[0]}
+                                    </span>
+                                  )}
+                                  {shop.offerCount > 0 && (
+                                    <Badge
+                                      variant="secondary"
+                                      className="shrink-0 px-1.5 text-[10px] font-normal"
+                                    >
+                                      {persianNumber.format(shop.offerCount)}{" "}
+                                      کالا
+                                    </Badge>
+                                  )}
+                                  {price && (
+                                    <Badge className="shrink-0 px-1.5 text-[10px] font-normal">
+                                      از {price}
+                                    </Badge>
+                                  )}
+                                </span>
                               </span>
                             </span>
-                          </span>
-                        </button>
-                      )
-                    })}
-                    {isLoadingMoreShops && <ShopListSkeleton />}
+                          </button>
+                        )
+                      })}
+                  </div>
+                )}
+                {isLoadingMoreShops && <ShopListSkeleton />}
+                {shopListPageError && (
+                  <div
+                    role="alert"
+                    className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-muted-foreground"
+                  >
+                    <span>بارگذاری ادامهٔ فهرست انجام نشد.</span>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => void loadMoreShops(true)}
+                    >
+                      تلاش دوباره
+                    </Button>
                   </div>
                 )}
               </ScrollArea>

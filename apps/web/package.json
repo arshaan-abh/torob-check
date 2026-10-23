@@ -15,6 +15,7 @@
     "@ai-sdk/openai-compatible": "^3.0.75",
     "@ai-sdk/react": "^4.0.152",
     "@rive-app/canvas-advanced": "2.45.0",
+    "@tanstack/react-virtual": "^3.14.21",
     "@workspace/db": "workspace:*",
     "@workspace/ui": "workspace:*",
     "ai": "^7.0.148",

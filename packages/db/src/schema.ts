@@ -49,7 +49,19 @@ export const shops = pgTable(
     supportsFastDelivery: boolean("supports_fast_delivery"),
     weeklyHours: jsonb("weekly_hours").$type<WeeklyHours | null>(),
   },
-  (table) => [index("shops_coordinates_idx").on(table.lat, table.lon)]
+  (table) => [
+    index("shops_coordinates_idx").on(table.lat, table.lon),
+    index("shops_name_shop_id_idx").on(table.name, table.shopId),
+    index("shops_name_trgm_idx").using("gin", table.name.op("gin_trgm_ops")),
+    index("shops_location_label_trgm_idx").using(
+      "gin",
+      table.locationLabel.op("gin_trgm_ops")
+    ),
+    index("shops_address_trgm_idx").using(
+      "gin",
+      table.address.op("gin_trgm_ops")
+    ),
+  ]
 )
 
 export const products = pgTable(
@@ -63,7 +75,25 @@ export const products = pgTable(
     persianTitle: text("persian_title"),
     specs: jsonb("specs").$type<ProductSpec[] | null>(),
   },
-  (table) => [index("products_category_idx").on(table.categoryName)]
+  (table) => [
+    index("products_category_idx").on(table.categoryName),
+    index("products_title_trgm_idx").using(
+      "gin",
+      table.persianTitle.op("gin_trgm_ops")
+    ),
+    index("products_brand_trgm_idx").using(
+      "gin",
+      table.brandName.op("gin_trgm_ops")
+    ),
+    index("products_model_trgm_idx").using(
+      "gin",
+      table.model.op("gin_trgm_ops")
+    ),
+    index("products_category_trgm_idx").using(
+      "gin",
+      table.categoryName.op("gin_trgm_ops")
+    ),
+  ]
 )
 
 export const offers = pgTable(
@@ -88,5 +118,17 @@ export const offers = pgTable(
   (table) => [
     index("offers_product_price_idx").on(table.productId, table.priceToman),
     index("offers_shop_idx").on(table.shopId),
+    index("offers_seller_title_trgm_idx").using(
+      "gin",
+      table.sellerTitle.op("gin_trgm_ops")
+    ),
+    index("offers_description_trgm_idx").using(
+      "gin",
+      table.description.op("gin_trgm_ops")
+    ),
+    index("offers_warranty_trgm_idx").using(
+      "gin",
+      table.warranty.op("gin_trgm_ops")
+    ),
   ]
 )

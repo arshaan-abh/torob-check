@@ -1,0 +1,2 @@
+CREATE INDEX "offers_warranty_trgm_idx" ON "offers" USING gin ("warranty" gin_trgm_ops);--> statement-breakpoint
+CREATE INDEX "products_category_trgm_idx" ON "products" USING gin ("category_name" gin_trgm_ops);
