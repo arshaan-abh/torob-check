@@ -1,0 +1,13 @@
+FROM node:24-alpine AS builder
+RUN corepack enable
+WORKDIR /app
+COPY . .
+RUN pnpm install --frozen-lockfile
+RUN pnpm --filter @workspace/worker deploy --prod --legacy /app/deploy
+
+FROM node:24-alpine AS runner
+ENV NODE_ENV=production
+WORKDIR /app
+COPY --from=builder --chown=node:node /app/deploy ./
+USER node
+CMD ["./node_modules/.bin/tsx", "src/index.ts"]

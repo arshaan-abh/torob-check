@@ -31,6 +31,7 @@
   },
   "exports": {
     ".": "./src/index.ts",
-    "./schema": "./src/schema.ts"
+    "./schema": "./src/schema.ts",
+    "./settings-crypto": "./src/settings-crypto.ts"
   }
 }

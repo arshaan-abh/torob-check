@@ -1,8 +1,16 @@
 export { getDb, getPool } from "./client"
 export {
-  searchAssistantCatalog,
-  type AssistantCatalogLocation,
-  type AssistantCatalogSearchResult,
+  getMapShops,
+  getShopPage,
+  type MapShopBounds,
+  type ShopCursor,
+  type ShopSortCenter,
+} from "./map-shops"
+export {
+  getAssistantShopDetails,
+  getFreshShopSources,
+  searchAssistantOffers,
+  type AssistantOfferResult,
+  type AssistantSearchInput,
 } from "./assistant-search"
-export { getMapShops, type MapShopBounds } from "./map-shops"
 export * from "./schema"

@@ -1,61 +1,9 @@
-import { getMapShops, type MapShopBounds } from "@workspace/db"
+import { getShopPage } from "@workspace/db"
 
-const SHOP_RESULT_LIMIT = 10000
-const DEFAULT_BOUNDS: MapShopBounds = {
-  west: 51.2,
-  south: 35.55,
-  east: 51.6,
-  north: 35.85,
-}
+import { decodeShopCursor, encodeShopCursor } from "@/lib/shop-pagination"
+import { parseShopFilters } from "@/lib/shop-query"
 
-function readBounds(
-  searchParams: URLSearchParams,
-  useDefaultBounds: boolean
-): MapShopBounds | null {
-  const values = [
-    searchParams.get("west"),
-    searchParams.get("south"),
-    searchParams.get("east"),
-    searchParams.get("north"),
-  ]
-  const hasBounds = values.some((value) => value !== null)
-
-  if (!hasBounds) return useDefaultBounds ? DEFAULT_BOUNDS : null
-  if (values.some((value) => value === null)) return null
-
-  const [westValue, southValue, eastValue, northValue] = values
-
-  if (
-    westValue === null ||
-    southValue === null ||
-    eastValue === null ||
-    northValue === null
-  ) {
-    return null
-  }
-
-  const west = Number(westValue)
-  const south = Number(southValue)
-  const east = Number(eastValue)
-  const north = Number(northValue)
-
-  if (
-    !Number.isFinite(west) ||
-    !Number.isFinite(south) ||
-    !Number.isFinite(east) ||
-    !Number.isFinite(north) ||
-    west < -180 ||
-    east > 180 ||
-    south < -90 ||
-    north > 90 ||
-    west >= east ||
-    south >= north
-  ) {
-    return null
-  }
-
-  return { west, south, east, north }
-}
+const SHOP_PAGE_SIZE = 100
 
 export async function GET(request: Request) {
   if (!process.env.DATABASE_URL) {
@@ -66,44 +14,52 @@ export async function GET(request: Request) {
   }
 
   const searchParams = new URL(request.url).searchParams
-  const rawSearch = searchParams.get("q")?.trim() ?? ""
-  const searchTerm = rawSearch.replace(/[\\%_]/g, "").slice(0, 80)
+  const parsedFilters = parseShopFilters(searchParams)
 
-  if (rawSearch && searchTerm.length < 2) {
+  if (!parsedFilters.filters) {
     return Response.json(
-      { error: "Search must contain at least two characters." },
+      { error: parsedFilters.error },
       { status: 400, headers: { "Cache-Control": "no-store" } }
     )
   }
 
-  const hasExplicitBounds = ["west", "south", "east", "north"].some((key) =>
-    searchParams.has(key)
-  )
-  const allShops = !searchTerm && searchParams.get("all") === "1"
-  const bounds = readBounds(searchParams, !searchTerm && !allShops)
+  const hasCursor = searchParams.has("cursor")
+  const rawCursor = searchParams.get("cursor")
+  const cursor =
+    hasCursor && rawCursor !== null
+      ? decodeShopCursor(rawCursor, parsedFilters.filters)
+      : null
 
-  if (
-    (!searchTerm && !allShops && !bounds) ||
-    (hasExplicitBounds && !bounds) ||
-    (allShops && hasExplicitBounds)
-  ) {
+  if (hasCursor && !cursor) {
     return Response.json(
-      { error: "Map bounds are invalid." },
+      { error: "The shop page cursor is invalid or expired." },
       { status: 400, headers: { "Cache-Control": "no-store" } }
     )
   }
 
   try {
-    const result = await getMapShops({
-      bounds,
-      searchTerm,
-      limit: SHOP_RESULT_LIMIT,
+    const result = await getShopPage({
+      bounds: parsedFilters.filters.bounds,
+      searchTerm: parsedFilters.filters.searchTerm,
+      sortCenter: parsedFilters.filters.sortCenter,
+      cursor,
+      pageSize: SHOP_PAGE_SIZE,
     })
 
-    return Response.json(result, {
-      headers: { "Cache-Control": "private, no-store" },
-    })
-  } catch {
+    return Response.json(
+      {
+        shops: result.shops,
+        total: result.total,
+        nextCursor: result.nextCursor
+          ? encodeShopCursor(result.nextCursor, parsedFilters.filters)
+          : null,
+      },
+      { headers: { "Cache-Control": "private, no-store" } }
+    )
+  } catch (error) {
+    if (process.env.NODE_ENV !== "production") {
+      console.error("Failed to load shops:", error)
+    }
     return Response.json(
       { error: "Shop data could not be loaded." },
       { status: 503, headers: { "Cache-Control": "no-store" } }
